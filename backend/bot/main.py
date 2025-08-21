@@ -62,11 +62,11 @@ REMARKETING_PLAN = {
 # ======== CONFIGURAÇÃO DE DELAYS E TIMEOUTS =============
 CONFIGURACAO_BOT = {
     "DELAYS": {
-        "ETAPA_2_PROMPT_PREVIA": 15,      # (15s) Tempo para enviar o prompt de prévia (fallback)
-        "ETAPA_3_GALERIA": 30,            # (30s) Tempo para enviar a galeria de mídias
-        "ETAPA_4_PLANOS_VIP": 300,        # (5min) Tempo para enviar os planos VIP
-        "ETAPA_5_REMARKETING": 1200,      # (20min) Tempo para enviar a oferta de remarketing
-        "APROVACAO_GRUPO_BG": 40,         # (40s) Tempo para aprovar a entrada no grupo em background
+        "ETAPA_2_PROMPT_PREVIA": 2,       # (2s) Tempo para enviar o prompt de prévia (fallback)
+        "ETAPA_3_GALERIA": 5,             # (5s) Tempo para enviar a galeria de mídias
+        "ETAPA_4_PLANOS_VIP": 30,         # (30s) Tempo para enviar os planos VIP
+        "ETAPA_5_REMARKETING": 300,       # (5min) Tempo para enviar a oferta de remarketing
+        "APROVACAO_GRUPO_BG": 5,          # (5s) Tempo para aprovar a entrada no grupo em background
     }
 }
 # ========================================================
