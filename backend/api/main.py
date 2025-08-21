@@ -13,7 +13,7 @@ from datetime import datetime
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from threading import Thread
-from database import get_db
+# from database import get_db  # Desabilitado para teste local
 
 # Configuração de logging
 logging.basicConfig(level=logging.INFO)
@@ -29,13 +29,15 @@ XTRACKY_TOKEN = os.getenv('XTRACKY_TOKEN', '72701474-7e6c-4c87-b84f-836d4547a4bd
 app = Flask(__name__)
 CORS(app)
 
-# Database PostgreSQL
-try:
-    db = get_db()
-    logger.info("✅ PostgreSQL conectado com sucesso")
-except Exception as e:
-    logger.error(f"❌ Erro ao conectar PostgreSQL: {e}")
-    db = None
+# Database PostgreSQL - DESABILITADO PARA TESTE LOCAL
+# try:
+#     db = get_db()
+#     logger.info("✅ PostgreSQL conectado com sucesso")
+# except Exception as e:
+#     logger.error(f"❌ Erro ao conectar PostgreSQL: {e}")
+#     db = None
+db = None
+logger.info("⚠️ PostgreSQL desabilitado para teste local")
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -115,7 +117,8 @@ def save_user():
             logger.info(f"✅ Usuário {telegram_id} salvo no PostgreSQL")
             return jsonify({'success': True, 'user_id': str(telegram_id)})
         else:
-            return jsonify({'success': False, 'error': 'Database not available'}), 500
+            logger.info(f"⚠️ TESTE LOCAL: Usuário {telegram_id} simulado como salvo (DB desabilitado)")
+            return jsonify({'success': True, 'user_id': str(telegram_id), 'test_mode': True})
         
     except Exception as e:
         logger.error(f"❌ Erro salvando usuário: {e}")

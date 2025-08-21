@@ -18,6 +18,10 @@ from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQuer
 from telegram.constants import ParseMode
 from telegram.error import BadRequest
 from html import escape
+from dotenv import load_dotenv
+
+# Carregar variáveis do arquivo .env
+load_dotenv()
 
 # ==============================================================================
 # 1. CONFIGURAÇÃO GERAL E INICIALIZAÇÃO
@@ -34,16 +38,21 @@ logger = logging.getLogger(__name__)
 # ======== VARIÁVEIS DE AMBIENTE (CRÍTICAS) =============
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 API_GATEWAY_URL = os.getenv('API_GATEWAY_URL')
-GROUP_ID = int(os.getenv('GRUPO_GRATIS_ID')) if os.getenv('GRUPO_GRATIS_ID') else None # ID numérico do grupo grátis
+ADMIN_ID = int(os.getenv('ADMIN_ID', '0')) if os.getenv('ADMIN_ID') else None
+GROUP_ID = int(os.getenv('GRUPO_GRATIS_ID', '0')) if os.getenv('GRUPO_GRATIS_ID') else None
 GROUP_INVITE_LINK = os.getenv('GRUPO_GRATIS_INVITE_LINK')
+GROUP_VIP_ID = int(os.getenv('GRUPO_VIP_ID', '0')) if os.getenv('GRUPO_VIP_ID') else None
+GROUP_VIP_INVITE_LINK = os.getenv('GRUPO_VIP_INVITE_LINK')
+SITE_ANA_CARDOSO = os.getenv('SITE_ANA_CARDOSO')
 # =======================================================
 
-# ======== FILE IDs DAS MÍDIAS =============
+# ======== FILE IDs DAS MÍDIAS ATUALIZADOS =============
 MEDIA_APRESENTACAO = os.getenv('MEDIA_APRESENTACAO')
 MEDIA_VIDEO_QUENTE = os.getenv('MEDIA_VIDEO_QUENTE')
 MEDIA_PREVIA_SITE = os.getenv('MEDIA_PREVIA_SITE')
 MEDIA_PROVOCATIVA = os.getenv('MEDIA_PROVOCATIVA')
-# ==========================================
+MEDIA_VIDEO_SEDUCAO = os.getenv('MEDIA_VIDEO_SEDUCAO')
+# ====================================================
 
 # ======== CONFIGURAÇÃO DOS PLANOS VIP =============
 VIP_PLANS = {
@@ -162,9 +171,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             usuarios_salvos[f"user_{user.id}"] = True
         except Exception as e: logger.error(f"❌ Erro ao salvar usuário {user.id}: {e}")
 
-    text = "Meu bem, entra no meu *GRUPINHO GRÁTIS* pra ver daquele jeito q vc gosta 🥵⬇️"
+    text = "🤖 **TESTE LOCAL FUNCIONANDO!**\n\nMeu bem, entra no meu *GRUPINHO GRÁTIS* pra ver daquele jeito q vc gosta 🥵⬇️"
     keyboard = [[InlineKeyboardButton("ENTRAR NO GRUPO 🥵", url=GROUP_INVITE_LINK)]]
-    await context.bot.send_photo(chat_id=chat_id, photo=MEDIA_APRESENTACAO, caption=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
+    # await context.bot.send_photo(chat_id=chat_id, photo=MEDIA_APRESENTACAO, caption=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
+    await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
 
     # Agenda a próxima etapa caso o usuário não solicite entrada no grupo
     context.job_queue.run_once(job_etapa2_prompt_previa, CONFIGURACAO_BOT["DELAYS"]["ETAPA_2_PROMPT_PREVIA"], chat_id=chat_id, name=f"job_etapa2_{chat_id}")
