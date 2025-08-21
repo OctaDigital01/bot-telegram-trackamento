@@ -4,7 +4,7 @@ import os
 
 class Database:
     def __init__(self):
-        self.data_file = "bot_database.json"
+        self.data_file = "data/bot_database.json"
         self.tracking_data = {}
         self.pix_transactions = {}
         self.load_data()

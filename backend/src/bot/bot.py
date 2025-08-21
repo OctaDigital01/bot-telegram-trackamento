@@ -6,9 +6,9 @@ import base64
 from datetime import datetime
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
-import config
-from database import db
-from api_gateway.tribopay_service import tribopay_service
+from ..config import config
+from ..database.database import db
+from ..api_gateway.tribopay_service import tribopay_service
 
 # Configuração de logging
 logging.basicConfig(

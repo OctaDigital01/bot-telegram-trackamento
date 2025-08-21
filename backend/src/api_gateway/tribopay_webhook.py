@@ -12,13 +12,9 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from threading import Thread
 
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from database import db
-from api_gateway.tribopay_service import tribopay_service
-import config
+from ..database.database import db
+from .tribopay_service import tribopay_service
+from ..config import config
 
 # Configuração de logging
 logging.basicConfig(level=logging.INFO)

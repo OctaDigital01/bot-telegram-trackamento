@@ -34,7 +34,7 @@ def main():
     
     try:
         # Importa e inicia webhook server
-        from api_gateway.tribopay_webhook import start_webhook_server
+        from src.api_gateway.tribopay_webhook import start_webhook_server
         logger.info("📡 Iniciando servidor webhook...")
         start_webhook_server()
         
@@ -43,7 +43,7 @@ def main():
         logger.info("✅ Servidor webhook iniciado com sucesso!")
         
         # Importa e inicia bot Telegram
-        from bot import main as bot_main
+        from src.bot.bot import main as bot_main
         logger.info("🤖 Iniciando Bot Telegram...")
         
         # Executa bot (blocking)
