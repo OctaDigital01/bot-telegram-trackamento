@@ -192,58 +192,94 @@ def gerar_pix():
         logger.info(f"💰 Gerando PIX REAL TriboPay R$ {valor} para usuário {user_id}")
         logger.info(f"📊 Tracking preservado: {tracking_data}")
         
-        # Gera PIX REAL via TriboPay API
-        tribopay_payload = {
-            "value": float(valor) * 100,  # Valor em centavos
-            "description": f"Pagamento {plano} - Sistema Xtracky",
-            "customer": {
-                "name": user_data.get('first_name', 'Cliente') if user_data else 'Cliente',
-                "email": f"user{user_id}@xtracky.com",
-                "phone": "11999999999",
-                "document": "00000000000"
-            },
-            "webhook_url": "https://api-gateway-production-22bb.up.railway.app/webhook/tribopay",
-            "metadata": {
-                "user_id": str(user_id),
-                "plano": plano,
-                "click_id": tracking_data.get('click_id'),
-                "utm_source": tracking_data.get('utm_source'),
-                "utm_campaign": tracking_data.get('utm_campaign')
-            }
+        # Primeiro, criar produto na TriboPay (OBRIGATÓRIO)
+        logger.info(f"📦 Criando produto na TriboPay")
+        product_payload = {
+            "title": f"Plano VIP - {plano}",
+            "cover": "https://ana-cardoso.shop/icon-check.png",
+            "sale_page": "https://ana-cardoso.shop",
+            "payment_type": 1,
+            "product_type": "digital",
+            "delivery_type": 1,
+            "id_category": 1,
+            "amount": int(valor * 100)
         }
         
+        # Headers apenas com Content-Type (api_token vai na URL)
         tribopay_headers = {
-            "Authorization": f"Bearer {TRIBOPAY_API_KEY}",
             "Content-Type": "application/json",
-            "X-API-KEY": TRIBOPAY_API_KEY
+            "Accept": "application/json"
         }
-        
-        # Faz requisição para TriboPay - tentando endpoint de cobranças PIX
-        logger.info(f"🚀 Fazendo requisição TriboPay")
         
         try:
-            # Tenta primeiro o endpoint de cobranças PIX
+            # Criar produto primeiro
+            product_response = requests.post(
+                f"https://api.tribopay.com.br/api/public/v1/products?api_token={TRIBOPAY_API_KEY}",
+                json=product_payload,
+                headers=tribopay_headers,
+                timeout=10
+            )
+            
+            if product_response.status_code != 201:
+                logger.error(f"❌ Erro ao criar produto: {product_response.status_code} - {product_response.text}")
+                raise Exception(f"Erro ao criar produto: {product_response.text}")
+            
+            product_data = product_response.json()
+            product_hash = product_data.get('hash', '')
+            logger.info(f"✅ Produto criado: {product_hash}")
+            
+            # Agora criar a transação PIX com o formato CORRETO
+            valor_centavos = int(valor * 100)
+            
+            tribopay_payload = {
+                "amount": valor_centavos,
+                "offer_hash": product_hash,  # OBRIGATÓRIO - hash do produto criado
+                "payment_method": "pix",  # OBRIGATÓRIO
+                "customer": {
+                    "name": user_data.get('first_name', 'Cliente') if user_data else 'Cliente',
+                    "email": f"user{user_id}@telegram.com",
+                    "phone_number": "11999999999",
+                    "document": "00000000000"
+                },
+                "cart": [
+                    {
+                        "product_hash": product_hash,
+                        "title": f"Plano VIP - {plano}",
+                        "price": valor_centavos,
+                        "quantity": 1,
+                        "operation_type": 1,
+                        "tangible": False
+                    }
+                ],
+                "expire_in_days": 1,  # Mínimo da API
+                "transaction_origin": "api",
+                "installments": 1,  # OBRIGATÓRIO para PIX
+                "postback_url": "https://api-gateway-production-22bb.up.railway.app/webhook/tribopay"
+            }
+            
+            logger.info(f"🚀 Criando transação PIX na TriboPay")
+            
+            # Fazer requisição para criar transação (api_token na URL)
             response = requests.post(
-                "https://api.tribopay.com.br/v1/charges/pix",
+                f"https://api.tribopay.com.br/api/public/v1/transactions?api_token={TRIBOPAY_API_KEY}",
                 json=tribopay_payload,
                 headers=tribopay_headers,
                 timeout=10
             )
             
-            # Se falhar, tenta o endpoint alternativo
-            if response.status_code == 404:
-                logger.info("🔄 Tentando endpoint alternativo")
-                response = requests.post(
-                    "https://api.tribopay.com.br/api/v1/pix/create",
-                    json=tribopay_payload,
-                    headers=tribopay_headers,
-                    timeout=10
-                )
-            
             logger.info(f"📡 TriboPay Response Status: {response.status_code}")
             logger.info(f"📡 TriboPay Response: {response.text}")
             
-            if response.status_code != 201:
+            if response.status_code == 201:
+                tribopay_data = response.json()
+                transaction_id = tribopay_data.get('hash', str(int(datetime.now().timestamp())))
+                pix_data = tribopay_data.get('pix', {})
+                pix_code = pix_data.get('pix_qr_code', '')
+                qr_code = pix_data.get('qr_code', '')
+                
+                logger.info(f"✅ PIX TriboPay REAL gerado: {transaction_id}")
+                logger.info(f"💳 PIX Code: {pix_code[:50]}..." if pix_code else "Sem PIX code")
+            else:
                 logger.error(f"❌ Erro TriboPay: {response.status_code} - {response.text}")
                 # FALLBACK: Gera PIX local se TriboPay falhar
                 logger.warning("⚠️ Usando PIX de fallback")
@@ -251,12 +287,6 @@ def gerar_pix():
                 pix_code = f"00020126580014BR.GOV.BCB.PIX0136{transaction_id}520400005303986540{valor:.2f}5802BR5925TRIBOPAY FALLBACK6009SAO PAULO62140510{transaction_id}6304"
                 qr_code = None
                 tribopay_data = {"fallback": True, "error": response.text}
-            else:
-                tribopay_data = response.json()
-                transaction_id = tribopay_data.get('id')
-                pix_code = tribopay_data.get('pix_code') or tribopay_data.get('qr_code_text')
-                qr_code = tribopay_data.get('qr_code')
-                logger.info(f"✅ PIX TriboPay gerado com sucesso: {transaction_id}")
                 
         except Exception as tribopay_error:
             logger.error(f"❌ Erro de conexão TriboPay: {tribopay_error}")

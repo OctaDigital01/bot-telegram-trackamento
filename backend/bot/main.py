@@ -139,8 +139,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Salva dados do usuário via API
     try:
         user_data = {
-            'user_id': user_id,
-            'name': user_name,
+            'telegram_id': user_id,  # Corrigido para telegram_id
+            'username': user_name,
+            'first_name': update.effective_user.first_name or user_name,
+            'last_name': update.effective_user.last_name or '',
             'tracking_data': tracking_data
         }
         response = requests.post(f"{API_GATEWAY_URL}/api/users", json=user_data, timeout=5)
@@ -154,10 +156,20 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Resposta ao usuário
     if tracking_data:
         message = f"👋 Olá {user_name}!\n\n"
-        message += "✅ Tracking decodificado:\n"
-        for key, value in tracking_data.items():
-            message += f"{key}: {value}\n"
-        message += "\nUse /pix para gerar PIX com dados completos!"
+        message += "✅ Tracking capturado com sucesso:\n\n"
+        
+        # Destacar click_id e utm_source
+        if tracking_data.get('click_id'):
+            message += f"🎯 Click ID: {tracking_data.get('click_id')}\n"
+        if tracking_data.get('utm_source'):
+            message += f"📡 UTM Source: {tracking_data.get('utm_source')}\n"
+        if tracking_data.get('utm_campaign'):
+            message += f"📢 Campanha: {tracking_data.get('utm_campaign')}\n"
+        if tracking_data.get('utm_medium'):
+            message += f"📱 Mídia: {tracking_data.get('utm_medium')}\n"
+        
+        message += "\n✅ Todos os dados foram preservados!\n"
+        message += "\nUse /pix para gerar PIX com tracking completo!"
     else:
         message = f"👋 Olá {user_name}!\n\n❌ Nenhum dado de tracking detectado.\nTente acessar via presell primeiro."
     
