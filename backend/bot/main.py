@@ -253,14 +253,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_in_group:
         logger.info(f"Usuário {user.id} já está no grupo.")
         
-        # Mostra tracking se disponível
+        # Tracking preservado silenciosamente (não envia mensagem para o usuário)
         if tracking_data:
-            tracking_msg = f"✅ Tracking preservado:\n"
-            if tracking_data.get('click_id'):
-                tracking_msg += f"🎯 Click ID: {tracking_data.get('click_id')}\n"
-            if tracking_data.get('utm_source'):
-                tracking_msg += f"📡 UTM Source: {tracking_data.get('utm_source')}\n"
-            await update.message.reply_text(tracking_msg)
+            logger.info(f"✅ Tracking preservado silenciosamente para usuário {user.id}: {tracking_data}")
         
         text = "Meu bem, que bom te ver de novo! 🔥 Clica aqui pra não perder as novidades quentes que preparei pra você! ⬇️"
         keyboard = [[InlineKeyboardButton("VER CONTEÚDINHO DE GRAÇA 🔥🥵", callback_data='step3_previews')]]
@@ -285,16 +280,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     click_id_param = " ".join(context.args) if context.args else None
     if click_id_param:
         logger.info(f"Usuário {user.id} veio com o parâmetro: {click_id_param}")
-        text = f"Você veio através do meu KWAI (*{click_id_param}*)\n\nMeu bem, entra no meu *GRUPINHO GRÁTIS* pra ver daquele jeito q vc gosta 🥵⬇️"
-        
-        # Mostra tracking detalhado
+        # Tracking preservado silenciosamente (não envia detalhes para o usuário)
         if tracking_data:
-            tracking_msg = f"✅ Tracking capturado:\n"
-            if tracking_data.get('click_id'):
-                tracking_msg += f"🎯 Click ID: {tracking_data.get('click_id')}\n"
-            if tracking_data.get('utm_source'):
-                tracking_msg += f"📡 UTM Source: {tracking_data.get('utm_source')}\n"
-            text = tracking_msg + "\n" + text
+            logger.info(f"✅ Tracking capturado silenciosamente para usuário {user.id}: {tracking_data}")
+        text = "Meu bem, entra no meu *GRUPINHO GRÁTIS* pra ver daquele jeito q vc gosta 🥵⬇️"
     else:
         logger.info(f"Usuário {user.id} é novo.")
         text = "Meu bem, entra no meu *GRUPINHO GRÁTIS* pra ver daquele jeito q vc gosta 🥵⬇️"
