@@ -24,30 +24,29 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configurações do bot
-BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '8422752874:AAFHBrpN2fXOPvQf0-k_786AooAQevUh4kY')
-API_GATEWAY_URL = os.getenv('API_GATEWAY_URL', 'https://api-gateway.railway.app')
+# Configurações do bot - VALORES CRÍTICOS SEM FALLBACK
+BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 DATABASE_URL = os.getenv('DATABASE_URL')
 
-# Configurações dos grupos
-GROUP_ID = int(os.getenv('GRUPO_GRATIS_ID', '-1002777277040'))  # Grupo Grátis
-GROUP_VIP_ID = int(os.getenv('GRUPO_VIP_ID', '-1002727792561'))  # Grupo VIP
-GROUP_INVITE_LINK = os.getenv('GRUPO_GRATIS_INVITE_LINK', 'https://t.me/+iydDH1RTDPJlNTNh')
-GROUP_VIP_INVITE_LINK = os.getenv('GRUPO_VIP_INVITE_LINK', 'hevG7NzA27YyNzgx')
+# API Gateway - CRÍTICO SEM FALLBACK
+API_GATEWAY_URL = os.getenv('API_GATEWAY_URL')
 
-# Admin e configurações gerais
-ADMIN_ID = int(os.getenv('ADMIN_ID', '908005914'))
-SITE_ANA_CARDOSO = os.getenv('SITE_ANA_CARDOSO', 'https://ana-cardoso.shop')
+# Configurações dos grupos - CRÍTICAS SEM FALLBACK
+GROUP_ID = int(os.getenv('GRUPO_GRATIS_ID')) if os.getenv('GRUPO_GRATIS_ID') else None
+GROUP_VIP_ID = int(os.getenv('GRUPO_VIP_ID')) if os.getenv('GRUPO_VIP_ID') else None
+GROUP_INVITE_LINK = os.getenv('GRUPO_GRATIS_INVITE_LINK')
+GROUP_VIP_INVITE_LINK = os.getenv('GRUPO_VIP_INVITE_LINK')
 
-# File IDs das mídias
-# APRESENTACAO: Mantém a original (não muda)
-MEDIA_APRESENTACAO = os.getenv('MEDIA_APRESENTACAO', 'AgACAgEAAxkDAAICkGifbTCVRssGewRrBD5ioZ7FHiH7AAISsjEb9OQBRT8IAAFhTPLV2AEAAwIAA3cAAzYE')
+# Admin e configurações gerais - CRÍTICAS SEM FALLBACK
+ADMIN_ID = int(os.getenv('ADMIN_ID')) if os.getenv('ADMIN_ID') else None
+SITE_ANA_CARDOSO = os.getenv('SITE_ANA_CARDOSO')
 
-# PRÉVIAS VIP: Novas mídias (21/08/2025) 
-MEDIA_VIDEO_QUENTE = os.getenv('MEDIA_VIDEO_QUENTE', 'BAACAgEAAxkDAAIOLWinfTqfJ4SEWvCrHda68K9h70KKAAIbBwACMQFBRR_rsl9biH1zNgQ')
-MEDIA_PREVIA_SITE = os.getenv('MEDIA_PREVIA_SITE', 'AgACAgEAAxkDAAIOL2infTsn8XIZPi9hbE1NpNIaKXiMAAIzrTEbMQFBRR63yONsxlHEAQADAgADeQADNgQ') 
-MEDIA_PROVOCATIVA = os.getenv('MEDIA_PROVOCATIVA', 'AgACAgEAAxkDAAIOMGinfTyHJB6WxE3A09JJOsfrAonRAAI0rTEbMQFBRVDGNhpvLgs0AQADAgADeQADNgQ')
-MEDIA_VIDEO_SEDUCAO = os.getenv('MEDIA_VIDEO_SEDUCAO', 'AgACAgEAAxkDAAIOLminfTr7EFz35tBWIMbepmJyuBDDAAIyrTEbMQFBRYIVHNrbPu82AQADAgADeQADNgQ')
+# File IDs das mídias - CRÍTICOS SEM FALLBACK (devem vir das variáveis de ambiente)
+MEDIA_APRESENTACAO = os.getenv('MEDIA_APRESENTACAO')
+MEDIA_VIDEO_QUENTE = os.getenv('MEDIA_VIDEO_QUENTE')
+MEDIA_PREVIA_SITE = os.getenv('MEDIA_PREVIA_SITE') 
+MEDIA_PROVOCATIVA = os.getenv('MEDIA_PROVOCATIVA')
+MEDIA_VIDEO_SEDUCAO = os.getenv('MEDIA_VIDEO_SEDUCAO')
 
 # Database PostgreSQL
 try:
@@ -781,11 +780,34 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
 
 def main():
     """Função principal do bot"""
-    if not BOT_TOKEN:
-        logger.critical("Variável de ambiente TELEGRAM_BOT_TOKEN não encontrada.")
-        return
-    if not GROUP_ID:
-        logger.critical("Variável de ambiente GROUP_ID não encontrada.")
+    
+    # ===== VALIDAÇÃO CRÍTICA DE VARIÁVEIS DE AMBIENTE =====
+    required_vars = {
+        'TELEGRAM_BOT_TOKEN': BOT_TOKEN,
+        'API_GATEWAY_URL': API_GATEWAY_URL,
+        'GRUPO_GRATIS_ID': GROUP_ID,
+        'GRUPO_VIP_ID': GROUP_VIP_ID,
+        'GRUPO_GRATIS_INVITE_LINK': GROUP_INVITE_LINK,
+        'GRUPO_VIP_INVITE_LINK': GROUP_VIP_INVITE_LINK,
+        'ADMIN_ID': ADMIN_ID,
+        'SITE_ANA_CARDOSO': SITE_ANA_CARDOSO,
+        'MEDIA_APRESENTACAO': MEDIA_APRESENTACAO,
+        'MEDIA_VIDEO_QUENTE': MEDIA_VIDEO_QUENTE,
+        'MEDIA_PREVIA_SITE': MEDIA_PREVIA_SITE,
+        'MEDIA_PROVOCATIVA': MEDIA_PROVOCATIVA,
+        'MEDIA_VIDEO_SEDUCAO': MEDIA_VIDEO_SEDUCAO
+    }
+    
+    missing_vars = []
+    for var_name, var_value in required_vars.items():
+        if not var_value:
+            missing_vars.append(var_name)
+    
+    if missing_vars:
+        logger.critical("❌ ERRO CRÍTICO: Variáveis de ambiente obrigatórias não configuradas:")
+        for var in missing_vars:
+            logger.critical(f"   ❌ {var}")
+        logger.critical("🔧 Configure todas as variáveis no Railway antes de iniciar o bot.")
         return
 
     logger.info("🤖 === BOT FUNIL DE VENDAS INICIANDO ===")
