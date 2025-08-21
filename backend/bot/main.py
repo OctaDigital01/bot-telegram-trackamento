@@ -440,6 +440,7 @@ async def processar_pagamento_plano(update: Update, context: ContextTypes.DEFAUL
                 await msg_loading.delete()  # Apaga a mensagem "Gerando PIX..."
                 
                 pix_copia_cola = result['pix_copia_cola']
+                qr_code = result.get('qr_code')  # URL do QR Code da TriboPay
                 transaction_id = result.get('transaction_id', f"tx_{user_id}_{int(datetime.now().timestamp())}")
                 
                 # Monta o texto da mensagem (igual ao script fornecido)
@@ -461,13 +462,35 @@ async def processar_pagamento_plano(update: Update, context: ContextTypes.DEFAUL
                 ]
                 reply_markup_botoes = InlineKeyboardMarkup(keyboard_botoes)
 
-                # Envia a mensagem final (por enquanto só texto, QR Code pode ser adicionado depois)
-                msg_enviada = await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=caption_completa,
-                    parse_mode='HTML',
-                    reply_markup=reply_markup_botoes
-                )
+                # Envia com QR Code como imagem se disponível, senão só texto
+                if qr_code:
+                    try:
+                        msg_enviada = await context.bot.send_photo(
+                            chat_id=chat_id,
+                            photo=qr_code,
+                            caption=caption_completa,
+                            parse_mode='HTML',
+                            reply_markup=reply_markup_botoes
+                        )
+                        logger.info(f"✅ PIX enviado com QR Code como imagem para {user_id}")
+                    except Exception as photo_err:
+                        logger.warning(f"⚠️ Erro enviando QR Code como foto: {photo_err}")
+                        # Fallback para mensagem de texto
+                        msg_enviada = await context.bot.send_message(
+                            chat_id=chat_id,
+                            text=caption_completa,
+                            parse_mode='HTML',
+                            reply_markup=reply_markup_botoes
+                        )
+                        logger.info(f"✅ PIX enviado como texto (fallback) para {user_id}")
+                else:
+                    msg_enviada = await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=caption_completa,
+                        parse_mode='HTML',
+                        reply_markup=reply_markup_botoes
+                    )
+                    logger.info(f"✅ PIX enviado como texto para {user_id}")
                 
                 # Armazena o ID da mensagem para controle
                 if user_id not in mensagens_pix: 
