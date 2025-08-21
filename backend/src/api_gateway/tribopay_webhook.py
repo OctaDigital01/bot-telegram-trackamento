@@ -146,8 +146,13 @@ def run_webhook_server():
     """Executa servidor webhook em thread separada"""
     port = config.WEBHOOK_PORT
     logger.info(f"🚀 Iniciando servidor webhook na porta {port}")
-    logger.info(f"📡 Webhook TriboPay: http://localhost:{port}/webhook/tribopay")
-    logger.info(f"❤️ Health check: http://localhost:{port}/health")
+    if os.getenv('RAILWAY_ENVIRONMENT'):
+        webhook_url = os.getenv('RAILWAY_STATIC_URL', 'railway-app.railway.app')
+        logger.info(f"📡 Webhook TriboPay: https://{webhook_url}/webhook/tribopay")
+        logger.info(f"❤️ Health check: https://{webhook_url}/health")
+    else:
+        logger.info(f"📡 Webhook TriboPay: http://localhost:{port}/webhook/tribopay")
+        logger.info(f"❤️ Health check: http://localhost:{port}/health")
     
     app.run(
         host='0.0.0.0',

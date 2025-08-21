@@ -28,7 +28,8 @@ def decode_tracking_data(encoded_param):
             # Tenta recuperar dados do servidor
             try:
                 import requests
-                response = requests.get(f"http://localhost:8080/api/tracking/get/{encoded_param}", timeout=5)
+                from ..config.config import WEBHOOK_URL
+                response = requests.get(f"{WEBHOOK_URL}/api/tracking/get/{encoded_param}", timeout=5)
                 if response.status_code == 200:
                     api_data = response.json()
                     if api_data.get('success') and api_data.get('original'):
@@ -124,7 +125,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Tenta buscar tracking recente para novos usuários
         try:
             import requests
-            response = requests.get("http://localhost:8080/api/tracking/latest", timeout=5)
+            from ..config.config import WEBHOOK_URL
+            response = requests.get(f"{WEBHOOK_URL}/api/tracking/latest", timeout=5)
             if response.status_code == 200:
                 api_data = response.json()
                 if api_data.get('success') and api_data.get('original'):
@@ -228,7 +230,7 @@ def main():
     """Função principal"""
     print("\n🚀 === XTRACKY BOT SIMPLIFICADO ===")
     print(f"📱 Bot: @XtrackyApibot")
-    print(f"🔗 Teste via presell: http://localhost:9000")
+    print(f"🔗 Teste via presell: https://presell.ana-cardoso.shop")
     print("=====================================\n")
     
     # Cria aplicação

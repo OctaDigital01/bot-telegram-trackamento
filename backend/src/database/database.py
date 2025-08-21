@@ -4,7 +4,14 @@ import os
 
 class Database:
     def __init__(self):
-        self.data_file = "data/bot_database.json"
+        # Para Railway, usa arquivo na raiz ou pasta /tmp se disponível
+        import os
+        if os.getenv('RAILWAY_ENVIRONMENT'):
+            # Railway - usar pasta temporária ou raiz
+            self.data_file = "/tmp/bot_database.json" if os.path.exists('/tmp') else "bot_database.json"
+        else:
+            # Local - usar pasta data
+            self.data_file = "data/bot_database.json"
         self.tracking_data = {}
         self.pix_transactions = {}
         self.load_data()

@@ -16,8 +16,17 @@ XTRACKY_WEBHOOK_URL = 'https://api.xtracky.com/api/integrations/tribopay'
 
 # Server
 WEBHOOK_PORT = int(os.getenv('PORT', os.getenv('WEBHOOK_PORT', '8080')))
-WEBHOOK_URL = os.getenv('WEBHOOK_URL', f'http://localhost:{WEBHOOK_PORT}')
 
-# Railway específico - URL será gerada automaticamente
+# URL do webhook - Railway vs Local
 if os.getenv('RAILWAY_ENVIRONMENT'):
-    WEBHOOK_URL = os.getenv('RAILWAY_PUBLIC_DOMAIN', WEBHOOK_URL)
+    # Railway - usar domínio gerado automaticamente
+    RAILWAY_SERVICE_DOMAIN = os.getenv('RAILWAY_STATIC_URL', os.getenv('RAILWAY_PUBLIC_DOMAIN'))
+    if RAILWAY_SERVICE_DOMAIN:
+        WEBHOOK_URL = f"https://{RAILWAY_SERVICE_DOMAIN}"
+    else:
+        # Fallback usando a estrutura padrão Railway
+        PROJECT_ID = "182edc71-043f-4345-9649-7e3a87b20004" 
+        WEBHOOK_URL = f"https://web-production-{PROJECT_ID[:8]}.up.railway.app"
+else:
+    # Local
+    WEBHOOK_URL = os.getenv('WEBHOOK_URL', f'http://localhost:{WEBHOOK_PORT}')

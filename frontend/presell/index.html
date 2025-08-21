@@ -165,6 +165,18 @@
             transform: translateY(-1px);
         }
 
+        .main-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            animation: none;
+            transform: none;
+        }
+
+        .main-button:disabled:hover {
+            transform: none;
+            box-shadow: 0 10px 35px rgba(224, 30, 90, 0.3);
+        }
+
         .button-icon {
             width: clamp(20px, 4vw, 26px);
             height: clamp(20px, 4vw, 26px);
@@ -359,8 +371,9 @@
     </style>
 </head>
 <body>
-    <!-- Script Xtracky (MANTIDO) -->
+    <!-- Script Xtracky com callback de carregamento -->
     <script 
+        id="xtracky-script"
         src="https://cdn.jsdelivr.net/gh/xTracky/static/utm-handler.js"
         data-token="72701474-7e6c-4c87-b84f-836d4547a4bd"
         data-click-id-param="click_id">
@@ -377,11 +390,11 @@
         </section>
 
         <!-- Botão principal -->
-        <button class="main-button" id="telegramBtn">
+        <button class="main-button" id="telegramBtn" disabled>
             <svg class="button-icon" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221l-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.446 1.394c-.14.18-.357.223-.548.223l.188-2.85 5.18-4.68c.223-.198-.054-.308-.346-.111l-6.4 4.02-2.76-.918c-.6-.187-.612-.6.125-.89l10.782-4.156c.5-.18.94.12.78.88z"/>
             </svg>
-            Vem me conhecer melhor 😉
+            <span id="buttonText">⏳ Carregando...</span>
         </button>
 
         <!-- Elementos de confiança abaixo do botão -->
@@ -426,13 +439,17 @@
     <div id="status" class="hidden"></div>
 
     <script>
-        // ========== TODO O SCRIPT DE TRACKING FOI MANTIDO INTACTO ==========
+        // ========== SISTEMA DE TRACKING COM CARREGAMENTO SEQUENCIAL ==========
         
-        // Captura parâmetros da URL
+        // Estado do sistema
+        let xtrackyLoaded = false;
+        let xtrackyData = null;
         const urlParams = new URLSearchParams(window.location.search);
-        
-        // Debug mode (ativa com ?debug=true)
         const debugMode = urlParams.get('debug') === 'true';
+        
+        // Elementos da página
+        const telegramBtn = document.getElementById('telegramBtn');
+        const buttonText = document.getElementById('buttonText');
         
         function log(message, data = null) {
             if (debugMode) {
@@ -452,6 +469,46 @@
                 }
             }
             console.log(message, data || '');
+        }
+
+        // Aguarda carregamento do script Xtracky
+        function waitForXtracky() {
+            return new Promise((resolve) => {
+                let attempts = 0;
+                const maxAttempts = 50; // 5 segundos máximo
+                
+                const checkXtracky = () => {
+                    attempts++;
+                    
+                    // Verifica se o Xtracky carregou (procura por window.xtracky ou similar)
+                    if (window.xTracky || window.utmHandler || document.querySelector('[data-xtracky-loaded]')) {
+                        log('✅ Xtracky script carregado!');
+                        xtrackyLoaded = true;
+                        resolve(true);
+                        return;
+                    }
+                    
+                    // Verifica se há parâmetros UTM capturados pelo Xtracky
+                    if (urlParams.has('click_id') || urlParams.has('utm_source')) {
+                        log('✅ Parâmetros Xtracky detectados na URL');
+                        xtrackyLoaded = true;
+                        resolve(true);
+                        return;
+                    }
+                    
+                    // Timeout após tentativas
+                    if (attempts >= maxAttempts) {
+                        log('⚠️ Timeout aguardando Xtracky - continuando sem script');
+                        resolve(false);
+                        return;
+                    }
+                    
+                    // Tenta novamente em 100ms
+                    setTimeout(checkXtracky, 100);
+                };
+                
+                checkXtracky();
+            });
         }
 
         function processUrlParams() {
@@ -479,15 +536,9 @@
             }, 3000);
         }
 
-        document.getElementById('telegramBtn').addEventListener('click', function() {
-            const btn = this;
-            const originalText = btn.innerHTML;
-            btn.innerHTML = '<span>⏳ Processando...</span>';
-            btn.disabled = true;
-
-            log('Button clicked, processing tracking data...');
-
-            const fullTrackingData = {
+        // Função para coletar dados de tracking
+        function collectTrackingData() {
+            const trackingData = {
                 click_id: urlParams.get('click_id') || '',
                 utm_source: urlParams.get('utm_source') || '',
                 utm_medium: urlParams.get('utm_medium') || '',
@@ -496,56 +547,99 @@
                 utm_content: urlParams.get('utm_content') || ''
             };
             
-            Object.keys(fullTrackingData).forEach(key => {
-                if (!fullTrackingData[key]) delete fullTrackingData[key];
+            // Remove parâmetros vazios
+            Object.keys(trackingData).forEach(key => {
+                if (!trackingData[key]) delete trackingData[key];
             });
 
-            log('Tracking data prepared', fullTrackingData);
+            return trackingData;
+        }
 
-            const shortId = 'M' + Date.now().toString(36).substring(-7);
+        // Handler do botão Telegram
+        function handleTelegramClick() {
+            if (!telegramBtn || telegramBtn.disabled) return;
             
-            log('Generated short ID', shortId);
+            telegramBtn.disabled = true;
+            buttonText.innerHTML = '⏳ Processando...';
 
-            // Usar diretamente o click_id ou gerar um ID simples
-            const trackingId = fullTrackingData.click_id || shortId;
+            log('Button clicked, processing tracking data...');
+
+            // Coleta dados de tracking já processados pelo Xtracky
+            const trackingData = collectTrackingData();
+            log('Tracking data collected', trackingData);
+
+            // Gera ID único para o tracking
+            const shortId = 'M' + Date.now().toString(36).substring(-7);
+            const trackingId = trackingData.click_id || shortId;
+            
+            // URL do bot com tracking ID
             const botUrl = `https://t.me/XtrackyApibot?start=${trackingId}`;
             
-            log('Direct bot URL', botUrl);
+            log('Bot URL generated', botUrl);
             
+            // Atualiza elementos ocultos
             document.getElementById('botUrl').textContent = botUrl;
             document.getElementById('status').innerHTML = '✅ Link gerado - Acessando conteúdo';
             
+            // Mostra feedback
             showStatus('✅ Acessando conteúdo...');
             
+            // Abre bot no Telegram
             window.open(botUrl, '_blank');
             
-            btn.innerHTML = '<span>✅ Conteúdo Liberado!</span>';
+            // Feedback final
+            buttonText.innerHTML = '✅ Conteúdo Liberado!';
             setTimeout(() => {
-                btn.innerHTML = originalText;
-                btn.disabled = false;
+                buttonText.innerHTML = 'Vem me conhecer melhor 😉';
+                telegramBtn.disabled = false;
             }, 2000);
-        });
+        }
+
+        // Adiciona listener ao botão
+        telegramBtn.addEventListener('click', handleTelegramClick);
 
         document.querySelector('.footer-text').addEventListener('click', function(e) {
             e.preventDefault();
             showStatus('🔐 Acesso 100% seguro');
         });
 
-        document.addEventListener('DOMContentLoaded', function() {
-            log('=== HOT CONTENT TRACKING SYSTEM ===');
+        // Inicialização assíncrona da página
+        async function initializePage() {
+            log('=== XTRACKY TRACKING SYSTEM INICIANDO ===');
             log('URL', window.location.href);
             
+            // Aguarda carregamento do Xtracky
+            buttonText.innerHTML = '⏳ Aguardando script...';
+            const xtrackySuccess = await waitForXtracky();
+            
+            // Processa parâmetros da URL (agora com Xtracky carregado)
             const hasParams = processUrlParams();
             if (hasParams) {
-                log('Parameters detected', Object.fromEntries(urlParams));
+                log('Parameters detected after Xtracky load', Object.fromEntries(urlParams));
             } else {
                 log('No URL parameters detected');
             }
             
-            if (urlParams.get('click_id')) {
-                showStatus('📋 Acesso rastreado');
+            // Habilita o botão
+            telegramBtn.disabled = false;
+            buttonText.innerHTML = 'Vem me conhecer melhor 😉';
+            
+            // Feedback visual
+            if (xtrackySuccess) {
+                if (urlParams.get('click_id')) {
+                    showStatus('📋 Acesso rastreado - Xtracky ativo');
+                } else {
+                    showStatus('✅ Sistema de tracking carregado');
+                }
+            } else {
+                showStatus('⚠️ Sistema de tracking com problema');
             }
-        });
+            
+            log('✅ Página inicializada - botão habilitado');
+        }
+
+        // Carrega página após DOM estar pronto
+        document.addEventListener('DOMContentLoaded', initializePage);
 
         let clickCount = 0;
         document.querySelector('.footer-text').addEventListener('click', function() {

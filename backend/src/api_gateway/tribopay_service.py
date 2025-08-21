@@ -19,7 +19,9 @@ class TribopayService:
         self.api_key = os.getenv('TRIBOPAY_API_KEY', 'IzJsCJ0BleuURRzZvrTeigPp6xknO8e9nHT6WZtDpxFQVocwa3E3GYeNXtYq')
         # URL Base oficial da TriboPay
         self.base_url = os.getenv('TRIBOPAY_BASE_URL', 'https://api.tribopay.com.br/api/public/v1')
-        self.webhook_url = os.getenv('WEBHOOK_URL', f'http://localhost:{os.getenv("WEBHOOK_PORT", "8080")}')
+        # Importa WEBHOOK_URL do config
+        from ..config.config import WEBHOOK_URL
+        self.webhook_url = WEBHOOK_URL
         
         # Headers padrão (sem Authorization - será na URL)
         self.headers = {
