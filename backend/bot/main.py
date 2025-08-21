@@ -13,6 +13,7 @@ import requests
 from datetime import datetime
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
+from database import get_db
 
 # Configuração de logging
 logging.basicConfig(
@@ -25,6 +26,14 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '8422752874:AAFHBrpN2fXOPvQf0-k_786AooAQevUh4kY')
 API_GATEWAY_URL = os.getenv('API_GATEWAY_URL', 'https://api-gateway.railway.app')
 DATABASE_URL = os.getenv('DATABASE_URL')
+
+# Database PostgreSQL
+try:
+    db = get_db()
+    logger.info("✅ Bot conectado ao PostgreSQL")
+except Exception as e:
+    logger.error(f"❌ Erro ao conectar PostgreSQL: {e}")
+    db = None
 
 def decode_tracking_data(encoded_param):
     """Decodifica dados de tracking do Xtracky"""

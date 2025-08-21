@@ -471,35 +471,25 @@
             console.log(message, data || '');
         }
 
-        // Aguarda carregamento do script Xtracky
+        // Aguarda carregamento rápido do script Xtracky
         function waitForXtracky() {
             return new Promise((resolve) => {
                 let attempts = 0;
-                const maxAttempts = 50; // 5 segundos máximo
+                const maxAttempts = 10; // 1 segundo máximo
                 
                 const checkXtracky = () => {
                     attempts++;
                     
-                    // Verifica se o Xtracky carregou (procura por window.xtracky ou similar)
-                    if (window.xTracky || window.utmHandler || document.querySelector('[data-xtracky-loaded]')) {
-                        log('✅ Xtracky script carregado!');
+                    // Verifica se o Xtracky carregou ou se há parâmetros
+                    if (window.xTracky || window.utmHandler || urlParams.has('click_id') || urlParams.has('utm_source')) {
                         xtrackyLoaded = true;
                         resolve(true);
                         return;
                     }
                     
-                    // Verifica se há parâmetros UTM capturados pelo Xtracky
-                    if (urlParams.has('click_id') || urlParams.has('utm_source')) {
-                        log('✅ Parâmetros Xtracky detectados na URL');
-                        xtrackyLoaded = true;
-                        resolve(true);
-                        return;
-                    }
-                    
-                    // Timeout após tentativas
+                    // Timeout rápido - continua mesmo sem carregar
                     if (attempts >= maxAttempts) {
-                        log('⚠️ Timeout aguardando Xtracky - continuando sem script');
-                        resolve(false);
+                        resolve(true); // Continua mesmo sem Xtracky
                         return;
                     }
                     
@@ -573,7 +563,7 @@
             const trackingId = trackingData.click_id || shortId;
             
             // URL do bot com tracking ID
-            const botUrl = `https://t.me/XtrackyApibot?start=${trackingId}`;
+            const botUrl = `https://t.me/anacardoso0408_bot?start=${trackingId}`;
             
             log('Bot URL generated', botUrl);
             
@@ -581,8 +571,7 @@
             document.getElementById('botUrl').textContent = botUrl;
             document.getElementById('status').innerHTML = '✅ Link gerado - Acessando conteúdo';
             
-            // Mostra feedback
-            showStatus('✅ Acessando conteúdo...');
+            // Sem feedback automático
             
             // Abre bot no Telegram
             window.open(botUrl, '_blank');
@@ -608,8 +597,8 @@
             log('=== XTRACKY TRACKING SYSTEM INICIANDO ===');
             log('URL', window.location.href);
             
-            // Aguarda carregamento do Xtracky
-            buttonText.innerHTML = '⏳ Aguardando script...';
+            // Carregamento rápido
+            buttonText.innerHTML = '⏳ Carregando...';
             const xtrackySuccess = await waitForXtracky();
             
             // Processa parâmetros da URL (agora com Xtracky carregado)
@@ -624,16 +613,7 @@
             telegramBtn.disabled = false;
             buttonText.innerHTML = 'Vem me conhecer melhor 😉';
             
-            // Feedback visual
-            if (xtrackySuccess) {
-                if (urlParams.get('click_id')) {
-                    showStatus('📋 Acesso rastreado - Xtracky ativo');
-                } else {
-                    showStatus('✅ Sistema de tracking carregado');
-                }
-            } else {
-                showStatus('⚠️ Sistema de tracking com problema');
-            }
+            // Sem feedback visual automático
             
             log('✅ Página inicializada - botão habilitado');
         }
