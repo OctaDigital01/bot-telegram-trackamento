@@ -28,16 +28,22 @@ BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '8422752874:AAFHBrpN2fXOPvQf0-k_786A
 API_GATEWAY_URL = os.getenv('API_GATEWAY_URL', 'https://api-gateway.railway.app')
 DATABASE_URL = os.getenv('DATABASE_URL')
 
-# Configurações do grupo
-GROUP_ID = int(os.getenv('GROUP_ID', '-1002342384678'))
-GROUP_INVITE_LINK = os.getenv('GROUP_INVITE_LINK', 'https://t.me/+iydDH1RTDPJlNTNh')
+# Configurações dos grupos
+GROUP_ID = int(os.getenv('GRUPO_GRATIS_ID', '-1002777277040'))  # Grupo Grátis
+GROUP_VIP_ID = int(os.getenv('GRUPO_VIP_ID', '-1002727792561'))  # Grupo VIP
+GROUP_INVITE_LINK = os.getenv('GRUPO_GRATIS_INVITE_LINK', 'https://t.me/+iydDH1RTDPJlNTNh')
+GROUP_VIP_INVITE_LINK = os.getenv('GRUPO_VIP_INVITE_LINK', 'hevG7NzA27YyNzgx')
 
-# File IDs das mídias
-START_IMAGE_ID = os.getenv('START_IMAGE_ID', 'AgACAgEAAxkDAAIGVmigsDHt4ov5fvN46eTqIfdHYVI1AAJKtzEbbGMBReAKfnNQDzqgAQADAgADdwADNgQ')
-MEDIA_VIDEO_1 = os.getenv('MEDIA_VIDEO_1', 'BAACAgEAAxkDAAIGVWigsDCQDYM4PsCosmPk2rYt9GOtAAJ6BgACbGMBRdLyaFfDZvcdNgQ')
-MEDIA_FOTO_1 = os.getenv('MEDIA_FOTO_1', 'AgACAgEAAxkDAAIGVmigsDHt4ov5fvN46eTqIfdHYVI1AAJKtzEbbGMBReAKfnNQDzqgAQADAgADdwADNgQ')
-MEDIA_FOTO_2 = os.getenv('MEDIA_FOTO_2', 'AgACAgEAAxkDAAIGV2igsDLSbp5a63k7GIhyxvRDoGNaAAJLtzEbbGMBRexpIw91lSiDAQADAgADdwADNgQ')
-MEDIA_FOTO_3 = os.getenv('MEDIA_FOTO_3', 'AgACAgEAAxkDAAIGWGigsDNOLNvO5hSMlmeuzo2EZAX2AAJMtzEbbGMBRSYr21qypjsBAQADAgADdwADNgQ')
+# Admin e configurações gerais
+ADMIN_ID = int(os.getenv('ADMIN_ID', '908005914'))
+SITE_ANA_CARDOSO = os.getenv('SITE_ANA_CARDOSO', 'https://ana-cardoso.shop')
+
+# File IDs das mídias - ATUALIZADOS
+MEDIA_APRESENTACAO = os.getenv('MEDIA_APRESENTACAO', 'AgACAgEAAxkDAAICkGifbTCVRssGewRrBD5ioZ7FHiH7AAISsjEb9OQBRT8IAAFhTPLV2AEAAwIAA3cAAzYE')
+MEDIA_PREVIA_SITE = os.getenv('MEDIA_PREVIA_SITE', 'AgACAgEAAxkDAAICkWifbTLJJXw8giB2iOCryZfe09NKAAITsjEb9OQBRcPT7l5BFvhEAQADAgADdwADNgQ')
+MEDIA_PROVOCATIVA = os.getenv('MEDIA_PROVOCATIVA', 'AgACAgEAAxkDAAICkmifbTVoJws6dWOr9jvInBJNL8EnAAIUsjEb9OQBRfFg8z7WVGXAAQADAgADeQADNgQ')
+MEDIA_VIDEO_QUENTE = os.getenv('MEDIA_VIDEO_QUENTE', 'BAACAgEAAxkDAAICk2ifbTjWqBxLbLKWQl2atKYYvIUpAAKQBQAC9OQBRcXNvpCv7-IoNgQ')
+MEDIA_VIDEO_SEDUCAO = os.getenv('MEDIA_VIDEO_SEDUCAO', 'BAACAgEAAxkDAAIClGifbToptIUG7OfvWF9pYUY0m2bsAAKRBQAC9OQBRSL4CZ3oqoFJNgQ')
 
 # Database PostgreSQL
 try:
@@ -135,10 +141,10 @@ async def step3_previews(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Tenta enviar media group, se falhar envia mensagens individuais
     try:
         media_group = [
-            InputMediaVideo(media=MEDIA_VIDEO_1),
-            InputMediaPhoto(media=MEDIA_FOTO_1),
-            InputMediaPhoto(media=MEDIA_FOTO_2),
-            InputMediaPhoto(media=MEDIA_FOTO_3),
+            InputMediaVideo(media=MEDIA_VIDEO_QUENTE),
+            InputMediaPhoto(media=MEDIA_APRESENTACAO),
+            InputMediaPhoto(media=MEDIA_PREVIA_SITE),
+            InputMediaPhoto(media=MEDIA_PROVOCATIVA),
         ]
         
         await context.bot.send_media_group(chat_id=chat_id, media=media_group)
@@ -263,7 +269,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Tenta enviar com foto, se falhar envia só texto
         try:
             await update.message.reply_photo(
-                photo=START_IMAGE_ID,
+                photo=MEDIA_APRESENTACAO,
                 caption=text,
                 reply_markup=reply_markup
             )
@@ -299,7 +305,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Tenta enviar com foto, se falhar envia só texto
     try:
         await update.message.reply_photo(
-            photo=START_IMAGE_ID,
+            photo=MEDIA_APRESENTACAO,
             caption=text,
             reply_markup=reply_markup,
             parse_mode=ParseMode.MARKDOWN
@@ -385,14 +391,14 @@ async def callback_quero_vip(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         # Preparação e envio das 4 mídias borradas
         midias = []
-        if MEDIA_VIDEO_1:
-            midias.append(InputMediaVideo(media=MEDIA_VIDEO_1, caption="😈 Vídeo exclusivo... imagina sem borração bb"))
-        if MEDIA_FOTO_1:
-            midias.append(InputMediaPhoto(media=MEDIA_FOTO_1, caption="🔥 Primeira prévia... você vai amar o original"))
-        if MEDIA_FOTO_2:
-            midias.append(InputMediaPhoto(media=MEDIA_FOTO_2, caption="🍑 Segunda prévia... imagina sem censura"))
-        if MEDIA_FOTO_3:
-            midias.append(InputMediaPhoto(media=MEDIA_FOTO_3, caption="💦 Terceira prévia... isso é só um gostinho"))
+        if MEDIA_VIDEO_QUENTE:
+            midias.append(InputMediaVideo(media=MEDIA_VIDEO_QUENTE, caption="😈 Vídeo exclusivo... imagina sem borração bb"))
+        if MEDIA_VIDEO_SEDUCAO:
+            midias.append(InputMediaVideo(media=MEDIA_VIDEO_SEDUCAO, caption="💋 Segundo vídeo... você vai delirar"))
+        if MEDIA_PREVIA_SITE:
+            midias.append(InputMediaPhoto(media=MEDIA_PREVIA_SITE, caption="🔥 Primeira prévia... você vai amar o original"))
+        if MEDIA_PROVOCATIVA:
+            midias.append(InputMediaPhoto(media=MEDIA_PROVOCATIVA, caption="💦 Terceira prévia... isso é só um gostinho"))
         
         # Envia o grupo de mídias apenas se for a primeira vez ou se não veio de um PIX
         if not vem_de_pix and midias:
