@@ -132,14 +132,19 @@ async def step3_previews(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     logger.info(f"Enviando Etapa 3 (Prévias) para o chat {chat_id}")
 
-    media_group = [
-        InputMediaVideo(media=PREVIEW_VIDEO_ID),
-        InputMediaPhoto(media=PREVIEW_IMAGE_1_ID),
-        InputMediaPhoto(media=PREVIEW_IMAGE_2_ID),
-        InputMediaPhoto(media=PREVIEW_IMAGE_3_ID),
-    ]
-    
-    await context.bot.send_media_group(chat_id=chat_id, media=media_group)
+    # Tenta enviar media group, se falhar envia mensagens individuais
+    try:
+        media_group = [
+            InputMediaVideo(media=PREVIEW_VIDEO_ID),
+            InputMediaPhoto(media=PREVIEW_IMAGE_1_ID),
+            InputMediaPhoto(media=PREVIEW_IMAGE_2_ID),
+            InputMediaPhoto(media=PREVIEW_IMAGE_3_ID),
+        ]
+        
+        await context.bot.send_media_group(chat_id=chat_id, media=media_group)
+    except Exception as e:
+        logger.warning(f"⚠️ Erro enviando media group: {e}")
+        await context.bot.send_message(chat_id, "🔥 Galeria de prévias (mídias não disponíveis)")
     
     # Espera 7 segundos
     await asyncio.sleep(7)
@@ -253,11 +258,20 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = "Meu bem, que bom te ver de novo! 🔥 Clica aqui pra não perder as novidades quentes que preparei pra você! ⬇️"
         keyboard = [[InlineKeyboardButton("VER CONTEÚDINHO DE GRAÇA 🔥🥵", callback_data='step3_previews')]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_photo(
-            photo=START_IMAGE_ID,
-            caption=text,
-            reply_markup=reply_markup
-        )
+        
+        # Tenta enviar com foto, se falhar envia só texto
+        try:
+            await update.message.reply_photo(
+                photo=START_IMAGE_ID,
+                caption=text,
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ Erro enviando foto para membro: {e}")
+            await update.message.reply_text(
+                text=text,
+                reply_markup=reply_markup
+            )
         return
 
     # Novo usuário ou com parâmetro - convida para grupo
@@ -281,12 +295,21 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("MEU GRUPINHO🥵?", url=GROUP_INVITE_LINK)]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.message.reply_photo(
-        photo=START_IMAGE_ID,
-        caption=text,
-        reply_markup=reply_markup,
-        parse_mode=ParseMode.MARKDOWN
-    )
+    # Tenta enviar com foto, se falhar envia só texto
+    try:
+        await update.message.reply_photo(
+            photo=START_IMAGE_ID,
+            caption=text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN
+        )
+    except Exception as e:
+        logger.warning(f"⚠️ Erro enviando foto de start: {e}")
+        await update.message.reply_text(
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN
+        )
 
 async def pix_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /pix - gera PIX via API Gateway"""
