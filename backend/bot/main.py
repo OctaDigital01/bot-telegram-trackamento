@@ -439,29 +439,23 @@ Vem goz.ar po.rra quentinha pra mim🥵💦⬇️"""
 async def callback_quero_vip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler para quando o usuário clica em 'QUERO ACESSO VIP' - mostra planos"""
     query = update.callback_query
+    
+    # Resposta rápida ao callback
     try:
         await query.answer()
-    except Exception as e:
-        logger.warning(f"⚠️ Erro respondendo callback VIP: {e}")
+    except:
+        pass
     
     if not query.from_user:
-        logger.error("❌ callback_quero_vip: query.from_user é None")
         return
     
     user_id = query.from_user.id
     chat_id = query.message.chat_id
     
-    logger.info(f"💎 INÍCIO callback_quero_vip para usuário {user_id}")
+    logger.info(f"💎 VIP callback para usuário {user_id}")
     
     try:
-        # Apaga a mensagem atual (botão CONHECER O VIP)
-        try:
-            await query.message.delete()
-            logger.info(f"🗑️ Mensagem anterior apagada para {user_id}")
-        except Exception as del_err:
-            logger.warning(f"⚠️ Erro ao deletar mensagem atual: {del_err}")
-
-        # Envio da mensagem com os planos VIP (sem mídias)
+        # Texto dos planos
         texto_planos = """Essas são só PRÉVIAS borradas do que te espera bb... 😈💦
 
 No VIP você vai ver TUDO sem censura, vídeos completos de mim gozando, chamadas privadas e muito mais!
@@ -475,23 +469,27 @@ No VIP você vai ver TUDO sem censura, vídeos completos de mim gozando, chamada
             [InlineKeyboardButton("🔥 R$ 49,90 - VIP + BRINDES", callback_data="plano_3meses")],
             [InlineKeyboardButton("💎 R$ 67,00 - TUDO + CONTATO DIRETO", callback_data="plano_1ano")]
         ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await context.bot.send_message(
-            chat_id=chat_id,
+        # EDITA a mensagem atual ao invés de deletar e enviar nova
+        await query.edit_message_text(
             text=texto_planos,
-            reply_markup=reply_markup,
+            reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='HTML'
         )
-        logger.info(f"✅ Mensagem de planos enviada para {user_id}")
+        logger.info(f"✅ Planos editados para {user_id}")
             
     except Exception as e:
-        logger.error(f"❌ ERRO GERAL em callback_quero_vip para {user_id}: {str(e)}")
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text="❌ Ops, algo deu errado! Tente novamente.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 TENTAR NOVAMENTE", callback_data="quero_vip")]])
-        )
+        logger.error(f"❌ Erro VIP {user_id}: {str(e)}")
+        # Fallback: envia nova mensagem se edição falhar
+        try:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=texto_planos,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='HTML'
+            )
+        except:
+            pass
 
 async def processar_pagamento_plano(update: Update, context: ContextTypes.DEFAULT_TYPE, plano: str, valor: float):
     """Processa a geração de PIX para um plano VIP específico"""
