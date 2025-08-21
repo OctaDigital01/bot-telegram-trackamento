@@ -441,11 +441,13 @@
     <script>
         // ========== SISTEMA DE TRACKING COM CARREGAMENTO SEQUENCIAL ==========
         
-        // Estado do sistema
+    // Estado do sistema
         let xtrackyLoaded = false;
         let xtrackyData = null;
         const urlParams = new URLSearchParams(window.location.search);
         const debugMode = urlParams.get('debug') === 'true';
+    // Configurar URL do API Gateway (substitua se necessário)
+    const API_GATEWAY_URL = window.__API_GATEWAY_URL__ || 'https://api-gateway-production-22bb.up.railway.app';
         
         // Elementos da página
         const telegramBtn = document.getElementById('telegramBtn');

@@ -67,17 +67,50 @@ def save_user():
         
         telegram_id = int(data.get('telegram_id') or data.get('user_id'))
         tracking_data = data.get('tracking_data', {})
-        
-        logger.info(f"🔍 tracking_data recebido: {tracking_data}")
-        logger.info(f"🔍 Tipo de tracking_data: {type(tracking_data)}")
-        
+
+        # Normaliza tracking_data: aceita dict, JSON string, ou wrappers ({ original: '...', tracking: {...}})
+        try:
+            # Se tracking_data for string JSON, desserializa
+            if isinstance(tracking_data, str):
+                try:
+                    tracking_data = json.loads(tracking_data)
+                except Exception:
+                    # deixa como objeto vazio se não for JSON
+                    tracking_data = {}
+
+            # Se veio um wrapper com 'original' (string JSON), tenta desserializar
+            if isinstance(tracking_data, dict) and 'original' in tracking_data:
+                original = tracking_data.get('original')
+                if isinstance(original, str):
+                    try:
+                        parsed = json.loads(original)
+                        # se o parsed tiver campo 'tracking', usa ele
+                        if isinstance(parsed, dict) and 'tracking' in parsed:
+                            tracking_data = parsed.get('tracking') or {}
+                        else:
+                            # parsed pode já ser o objeto de tracking
+                            tracking_data = parsed or {}
+                    except Exception:
+                        # não é JSON, mantém como estava
+                        tracking_data = {}
+
+            # Se veio wrapper com 'tracking' como chave
+            if isinstance(tracking_data, dict) and 'tracking' in tracking_data and isinstance(tracking_data.get('tracking'), dict):
+                tracking_data = tracking_data.get('tracking')
+
+        except Exception as e:
+            logger.warning(f"⚠️ Falha ao normalizar tracking_data: {e}")
+            tracking_data = {}
+
+        logger.info(f"🔍 tracking_data normalizado: {tracking_data}")
+
         if db:
             db.save_user(
                 telegram_id=telegram_id,
                 username=data.get('username'),
                 first_name=data.get('first_name') or data.get('name'),
                 last_name=data.get('last_name'),
-                tracking_data=tracking_data
+                tracking_data=tracking_data or {}
             )
             logger.info(f"✅ Usuário {telegram_id} salvo no PostgreSQL")
             return jsonify({'success': True, 'user_id': str(telegram_id)})
