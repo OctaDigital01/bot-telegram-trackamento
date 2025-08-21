@@ -391,8 +391,8 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
         # Envia a Etapa 2 imediatamente
         await send_step2_message(context, user_id)
         
-        # Espera 30 segundos
-        await asyncio.sleep(30)
+        # Espera 40 segundos
+        await asyncio.sleep(40)
         
         # Aprova a entrada
         try:
@@ -436,7 +436,7 @@ def main():
     logger.info("   ✅ Sistema PIX TriboPay")
     logger.info("   ✅ PostgreSQL integrado")
     logger.info("   ✅ Verificação de grupo")
-    logger.info("   ✅ Aprovação automática (30s)")
+    logger.info("   ✅ Aprovação automática (40s)")
     logger.info("   ✅ Galeria de prévias (7s delay)")
     logger.info("   ✅ Botões VIP integrados")
     
