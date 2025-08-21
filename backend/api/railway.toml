@@ -8,11 +8,8 @@ restartPolicyMaxRetries = 3
 
 [environments.production.variables]
 # Porta Railway (auto-assign)
-WEBHOOK_PORT = "$PORT"
+PORT = "$PORT"
 
-# Python 
+# Python
 PYTHONPATH = "."
 PYTHONUNBUFFERED = "1"
-
-# Configurações essenciais
-NODE_ENV = "production"
