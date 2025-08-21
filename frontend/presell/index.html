@@ -376,7 +376,9 @@
         id="xtracky-script"
         src="https://cdn.jsdelivr.net/gh/xTracky/static/utm-handler.js"
         data-token="72701474-7e6c-4c87-b84f-836d4547a4bd"
-        data-click-id-param="click_id">
+        data-click-id-param="click_id"
+        onload="window.xtrackyScriptLoaded = true; console.log('🔗 Script Xtracky carregado');"
+        onerror="window.xtrackyScriptError = true; console.log('❌ Erro ao carregar script Xtracky');">
     </script>
 
     <!-- Main Content - direto no body sem containers limitantes -->
@@ -444,8 +446,9 @@
     // Estado do sistema
         let xtrackyLoaded = false;
         let xtrackyData = null;
-        const urlParams = new URLSearchParams(window.location.search);
+        let urlParams = new URLSearchParams(window.location.search);
         const debugMode = urlParams.get('debug') === 'true';
+        let urlMonitorActive = true;
     // Configurar URL do API Gateway (substitua se necessário)
     const API_GATEWAY_URL = window.__API_GATEWAY_URL__ || 'https://api-gateway-production-22bb.up.railway.app';
         
@@ -473,25 +476,71 @@
             console.log(message, data || '');
         }
 
-        // Aguarda carregamento rápido do script Xtracky
+        // Sistema avançado de espera do Xtracky com detecção de mudanças na URL
         function waitForXtracky() {
             return new Promise((resolve) => {
                 let attempts = 0;
-                const maxAttempts = 10; // 1 segundo máximo
+                const maxAttempts = 50; // 5 segundos máximo
+                const initialUrl = window.location.href;
+                const initialParams = new URLSearchParams(window.location.search);
+                
+                log('Aguardando Xtracky carregar...', {
+                    initialUrl,
+                    initialParams: Object.fromEntries(initialParams)
+                });
                 
                 const checkXtracky = () => {
                     attempts++;
                     
-                    // Verifica se o Xtracky carregou ou se há parâmetros
-                    if (window.xTracky || window.utmHandler || urlParams.has('click_id') || urlParams.has('utm_source')) {
+                    // Atualiza URLSearchParams atual
+                    const currentParams = new URLSearchParams(window.location.search);
+                    const currentUrl = window.location.href;
+                    
+                    // Verifica se URL mudou (Xtracky adicionou parâmetros)
+                    const urlChanged = currentUrl !== initialUrl;
+                    const hasUtmSource = currentParams.has('utm_source');
+                    const hasClickId = currentParams.has('click_id');
+                    
+                    // Verifica se objetos globais Xtracky existem
+                    const hasXtrackyObjects = window.xTracky || window.utmHandler || 
+                                            window.fingerprint || window.navigationReady ||
+                                            window.xtrackyScriptLoaded ||
+                                            document.querySelector('#xtracky-script')?.getAttribute('data-loaded');
+                    
+                    // Detecta evento de navegação pronto
+                    const navigationReadyFired = window.xtrackyNavigationReady || false;
+                    
+                    log(`Tentativa ${attempts}/${maxAttempts}`, {
+                        urlChanged,
+                        hasUtmSource,
+                        hasClickId,
+                        hasXtrackyObjects,
+                        navigationReadyFired,
+                        currentUrl
+                    });
+                    
+                    // Condições para considerar Xtracky carregado
+                    if (urlChanged || hasUtmSource || hasClickId || navigationReadyFired) {
+                        log('✅ Xtracky detectado como carregado!');
                         xtrackyLoaded = true;
+                        // Atualiza o urlParams global com os novos parâmetros
+                        urlParams = currentParams;
                         resolve(true);
                         return;
                     }
                     
-                    // Timeout rápido - continua mesmo sem carregar
+                    // Se passou de 3 segundos e ainda não carregou, considera parcialmente pronto
+                    if (attempts >= 30 && (hasXtrackyObjects || currentParams.size > initialParams.size)) {
+                        log('⚠️ Xtracky parcialmente detectado - continuando');
+                        urlParams = currentParams;
+                        resolve(true);
+                        return;
+                    }
+                    
+                    // Timeout total - continua mesmo sem Xtracky
                     if (attempts >= maxAttempts) {
-                        resolve(true); // Continua mesmo sem Xtracky
+                        log('⏰ Timeout atingido - continuando sem Xtracky');
+                        resolve(true);
                         return;
                     }
                     
@@ -499,11 +548,31 @@
                     setTimeout(checkXtracky, 100);
                 };
                 
+                // Listener para evento customizado do Xtracky
+                window.addEventListener('navigationReady', () => {
+                    log('📡 Evento navigationReady detectado');
+                    window.xtrackyNavigationReady = true;
+                });
+                
+                // Listener adicional para popstate (mudanças de URL)
+                window.addEventListener('popstate', () => {
+                    log('🔄 Popstate detectado - URL pode ter mudado');
+                    const newParams = new URLSearchParams(window.location.search);
+                    if (newParams.toString() !== urlParams.toString()) {
+                        log('✅ Novos parâmetros detectados via popstate');
+                        urlParams = newParams;
+                    }
+                });
+                
                 checkXtracky();
             });
         }
 
         function processUrlParams() {
+            // Sempre atualiza com os parâmetros atuais da URL
+            const currentParams = new URLSearchParams(window.location.search);
+            urlParams = currentParams;
+            
             const container = document.getElementById('urlParams');
             if (urlParams.toString()) {
                 let html = '';
@@ -626,31 +695,91 @@
         // Inicialização assíncrona da página
         async function initializePage() {
             log('=== XTRACKY TRACKING SYSTEM INICIANDO ===');
-            log('URL', window.location.href);
+            log('URL inicial', window.location.href);
             
-            // Carregamento rápido
-            buttonText.innerHTML = '⏳ Carregando...';
+            // Processa parâmetros iniciais
+            const initialParams = processUrlParams();
+            log('Parâmetros iniciais detectados:', initialParams);
+            
+            // Aguarda Xtracky carregar e potencialmente modificar a URL
+            buttonText.innerHTML = '⏳ Carregando tracking...';
             const xtrackySuccess = await waitForXtracky();
             
-            // Processa parâmetros da URL (agora com Xtracky carregado)
-            const hasParams = processUrlParams();
-            if (hasParams) {
-                log('Parameters detected after Xtracky load', Object.fromEntries(urlParams));
+            // Processa parâmetros novamente após Xtracky (podem ter mudado)
+            const finalParams = processUrlParams();
+            log('URL final após Xtracky', window.location.href);
+            
+            if (finalParams) {
+                log('✅ Parâmetros finais capturados', Object.fromEntries(urlParams));
+                
+                // Mostra feedback visual se parâmetros foram detectados
+                const trackingData = collectTrackingData();
+                if (trackingData.utm_source) {
+                    buttonText.innerHTML = '📡 Tracking detectado!';
+                    setTimeout(() => {
+                        buttonText.innerHTML = 'Vem me conhecer melhor 😉';
+                    }, 1500);
+                } else {
+                    buttonText.innerHTML = 'Vem me conhecer melhor 😉';
+                }
             } else {
-                log('No URL parameters detected');
+                log('⚠️ Nenhum parâmetro UTM detectado');
+                buttonText.innerHTML = 'Vem me conhecer melhor 😉';
             }
             
             // Habilita o botão
             telegramBtn.disabled = false;
-            buttonText.innerHTML = 'Vem me conhecer melhor 😉';
             
-            // Sem feedback visual automático
+            log('✅ Página totalmente inicializada - botão habilitado');
+        }
+
+        // Sistema de monitoramento contínuo da URL para detectar mudanças do Xtracky
+        function startUrlMonitoring() {
+            let lastUrl = window.location.href;
+            let monitorCount = 0;
+            const maxMonitorAttempts = 100; // 10 segundos
             
-            log('✅ Página inicializada - botão habilitado');
+            const monitor = () => {
+                if (!urlMonitorActive || monitorCount >= maxMonitorAttempts) return;
+                
+                monitorCount++;
+                const currentUrl = window.location.href;
+                
+                if (currentUrl !== lastUrl) {
+                    log('🔄 URL modificada pelo Xtracky detectada!', {
+                        antes: lastUrl,
+                        depois: currentUrl
+                    });
+                    
+                    // Reprocessa parâmetros
+                    processUrlParams();
+                    
+                    // Atualiza feedback visual se necessário
+                    const trackingData = collectTrackingData();
+                    if (trackingData.utm_source && !telegramBtn.disabled) {
+                        buttonText.innerHTML = '📡 Tracking atualizado!';
+                        setTimeout(() => {
+                            buttonText.innerHTML = 'Vem me conhecer melhor 😉';
+                        }, 1500);
+                    }
+                    
+                    lastUrl = currentUrl;
+                    urlMonitorActive = false; // Para o monitoramento após detectar mudança
+                    return;
+                }
+                
+                // Continua monitorando
+                setTimeout(monitor, 100);
+            };
+            
+            setTimeout(monitor, 100);
         }
 
         // Carrega página após DOM estar pronto
-        document.addEventListener('DOMContentLoaded', initializePage);
+        document.addEventListener('DOMContentLoaded', async () => {
+            await initializePage();
+            startUrlMonitoring(); // Inicia monitoramento após inicialização
+        });
 
         let clickCount = 0;
         document.querySelector('.footer-text').addEventListener('click', function() {
