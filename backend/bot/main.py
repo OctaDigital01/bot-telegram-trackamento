@@ -356,23 +356,19 @@ mensagens_pix = {}
 async def enviar_previews_automatico(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int):
     """Envia prévias automaticamente após 15s se usuário não entrou no grupo"""
     try:
+        logger.info(f"⏰ TIMER INICIADO: Aguardando 15s para usuário {user_id}")
         # Aguarda 15 segundos
         await asyncio.sleep(15)
+        logger.info(f"⏰ TIMER FINALIZADO: 15s passaram para usuário {user_id}")
         
         # Verifica se usuário já viu as prévias (manual ou automaticamente)
         if user_id in usuarios_viram_previews:
             logger.info(f"⏭️ Usuário {user_id} já viu prévias, cancelando envio automático")
             return
             
-        # Verifica se usuário entrou no grupo durante os 15s
-        try:
-            chat_member = await context.bot.get_chat_member(chat_id=GROUP_ID, user_id=user_id)
-            is_in_group = chat_member.status in ['member', 'administrator', 'creator']
-            if is_in_group:
-                logger.info(f"⏭️ Usuário {user_id} entrou no grupo, cancelando envio automático")
-                return
-        except Exception:
-            pass  # Usuário não está no grupo, continua com o envio
+        # SIMPLIFICADO: Remove verificação de grupo para garantir que timer funcione
+        # Se usuário não clicou no botão manual, envia automaticamente
+        logger.info(f"🔍 Usuário {user_id} não clicou no botão em 15s, enviando prévias automaticamente")
             
         # Marca que usuário viu prévias automaticamente
         usuarios_viram_previews.add(user_id)
