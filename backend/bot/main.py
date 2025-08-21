@@ -165,7 +165,7 @@ Tenho muito mais no VIP pra você (TOTALMENTE SEM CENSURA):
 
 Vem goz.ar po.rra quentinha pra mim🥵💦⬇️"""
 
-    keyboard = [[InlineKeyboardButton("CONHECER O VIP🔥", callback_data='vip_options')]]
+    keyboard = [[InlineKeyboardButton("CONHECER O VIP🔥", callback_data='quero_vip')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await context.bot.send_message(
@@ -342,21 +342,118 @@ async def pix_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"❌ Erro comando PIX: {e}")
         await update.message.reply_text("❌ Erro interno do sistema")
 
-# ===== CALLBACK DO PAGAMENTO VIP =====
-async def vip_options_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Callback para o botão de conhecer o VIP - integra com PIX existente"""
+# ===== SISTEMA VIP COMPLETO - BASEADO NO SCRIPT FORNECIDO =====
+
+# Caches para controle do fluxo
+usuarios_viram_midias = set()
+pix_cache = {}
+mensagens_pix = {}
+
+async def callback_quero_vip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler para quando o usuário clica em 'QUERO ACESSO VIP' - mostra planos"""
     query = update.callback_query
     await query.answer()
+    
+    if not query.from_user:
+        logger.error("❌ callback_quero_vip: query.from_user é None")
+        return
+    
     user_id = query.from_user.id
+    chat_id = query.message.chat_id
     
-    logger.info(f"💎 Usuário {user_id} clicou para conhecer o VIP")
+    logger.info(f"💎 INÍCIO callback_quero_vip para usuário {user_id}")
     
-    # Integra com sistema PIX existente (MANTÉM FUNCIONALIDADE)
     try:
+        # Detecção de contexto (se veio de um PIX anterior)
+        vem_de_pix = False
+        if query.message and query.message.reply_markup:
+            for row in query.message.reply_markup.inline_keyboard:
+                for button in row:
+                    if "escolher outro" in button.text.lower():
+                        vem_de_pix = True
+                        break
+                if vem_de_pix:
+                    break
+        
+        # Limpa a mensagem PIX anterior se o usuário quer trocar de plano
+        if vem_de_pix:
+            logger.info(f"🗑️ Limpando mensagem PIX para {user_id} para escolha de novo plano.")
+            try:
+                await query.message.delete()
+            except Exception as del_err:
+                logger.warning(f"⚠️ Erro ao deletar mensagem atual: {del_err}")
+
+        # Preparação e envio das 4 mídias borradas
+        midias = []
+        if MEDIA_VIDEO_1:
+            midias.append(InputMediaVideo(media=MEDIA_VIDEO_1, caption="😈 Vídeo exclusivo... imagina sem borração bb"))
+        if MEDIA_FOTO_1:
+            midias.append(InputMediaPhoto(media=MEDIA_FOTO_1, caption="🔥 Primeira prévia... você vai amar o original"))
+        if MEDIA_FOTO_2:
+            midias.append(InputMediaPhoto(media=MEDIA_FOTO_2, caption="🍑 Segunda prévia... imagina sem censura"))
+        if MEDIA_FOTO_3:
+            midias.append(InputMediaPhoto(media=MEDIA_FOTO_3, caption="💦 Terceira prévia... isso é só um gostinho"))
+        
+        # Envia o grupo de mídias apenas se for a primeira vez ou se não veio de um PIX
+        if not vem_de_pix and midias:
+            try:
+                await context.bot.send_media_group(chat_id=chat_id, media=midias)
+                usuarios_viram_midias.add(user_id)  # Marca que o usuário viu as mídias
+                logger.info(f"✅ Mídias VIP enviadas com sucesso para {user_id}")
+                await asyncio.sleep(3)  # Pausa para o usuário ver as mídias
+            except Exception as media_err:
+                logger.error(f"❌ ERRO no envio de mídias para {user_id}: {media_err}")
+
+        # Envio da mensagem com os planos VIP
+        texto_planos = """Essas são só PRÉVIAS borradas do que te espera bb... 😈💦
+No VIP você vai ver TUDO sem censura, vídeos completos de mim gozando, chamadas privadas e muito mais!
+<b>Escolhe o seu acesso especial:</b>
+📢 <b>ATENÇÃO:</b> Apenas 5 vagas restantes! Depois que esgotar, só na próxima semana!"""
+        
+        keyboard = [
+            [InlineKeyboardButton("💦 R$ 24,90 - ACESSO VIP", callback_data="plano_1mes")],
+            [InlineKeyboardButton("🔥 R$ 49,90 - VIP + BRINDES", callback_data="plano_3meses")],
+            [InlineKeyboardButton("💎 R$ 67,00 - TUDO + CONTATO DIRETO", callback_data="plano_1ano")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=texto_planos,
+            reply_markup=reply_markup,
+            parse_mode='HTML'
+        )
+        logger.info(f"✅ Mensagem de planos enviada para {user_id}")
+            
+    except Exception as e:
+        logger.error(f"❌ ERRO GERAL em callback_quero_vip para {user_id}: {str(e)}")
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="❌ Ops, algo deu errado! Tente novamente.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 TENTAR NOVAMENTE", callback_data="quero_vip")]])
+        )
+
+async def processar_pagamento_plano(update: Update, context: ContextTypes.DEFAULT_TYPE, plano: str, valor: float):
+    """Processa a geração de PIX para um plano VIP específico"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    user_name = query.from_user.first_name
+    chat_id = query.message.chat_id
+    
+    logger.info(f"💳 Gerando PIX para {user_name} ({user_id}) - Plano: {plano} - R$ {valor}")
+    
+    # Deleta a mensagem anterior (dos planos) e mostra um aviso de carregamento
+    await query.message.delete()
+    msg_loading = await context.bot.send_message(chat_id=chat_id, text="💎 Gerando seu PIX... aguarde! ⏳")
+    
+    try:
+        # Geração do PIX via API Gateway (mantém integração existente)
         pix_data = {
             'user_id': user_id,
-            'valor': 10.0,
-            'plano': 'VIP'
+            'valor': valor,
+            'plano': plano
         }
         
         response = requests.post(f"{API_GATEWAY_URL}/api/pix/gerar", json=pix_data, timeout=10)
@@ -364,21 +461,102 @@ async def vip_options_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         if response.status_code == 200:
             result = response.json()
             if result.get('success'):
-                message = f"💰 PIX VIP de R$ {result['valor']} gerado!\n\n"
-                message += f"📋 PIX Copia e Cola:\n`{result['pix_copia_cola']}`\n\n"
-                message += "🔥 Após o pagamento você terá acesso TOTAL ao conteúdo VIP!\n\n"
-                message += "✅ Todos os dados de tracking foram preservados!"
+                await msg_loading.delete()  # Apaga a mensagem "Gerando PIX..."
                 
-                await query.edit_message_text(message)
-                logger.info(f"✅ PIX VIP gerado para usuário {user_id}")
+                pix_copia_cola = result['pix_copia_cola']
+                transaction_id = result.get('transaction_id', f"tx_{user_id}_{int(datetime.now().timestamp())}")
+                
+                # Monta o texto da mensagem (igual ao script fornecido)
+                from html import escape
+                codigo_html_seguro = escape(pix_copia_cola)
+                info_plano = f"💎 <b><u>Plano VIP</u></b> ({plano})\n💰 Valor: <b>R$ {valor:.2f}</b>"
+                
+                caption_completa = f"""📸 <b>Pague utilizando o QR Code</b>
+💸 <b>Pague por Pix copia e cola:</b>
+<blockquote><code>{codigo_html_seguro}</code></blockquote><i>(Clique no código para copiar)</i>
+🎯 <b>Detalhes do Plano:</b>
+{info_plano}
+<b>Promoção Válida por 15 minutos!</b>"""
+                
+                # Monta os botões de ação
+                keyboard_botoes = [
+                    [InlineKeyboardButton("✅ Já Paguei", callback_data=f"ja_paguei:{transaction_id}")],
+                    [InlineKeyboardButton("🔄 Escolher Outro Plano", callback_data="quero_vip")]
+                ]
+                reply_markup_botoes = InlineKeyboardMarkup(keyboard_botoes)
+
+                # Envia a mensagem final (por enquanto só texto, QR Code pode ser adicionado depois)
+                msg_enviada = await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=caption_completa,
+                    parse_mode='HTML',
+                    reply_markup=reply_markup_botoes
+                )
+                
+                # Armazena o ID da mensagem para controle
+                if user_id not in mensagens_pix: 
+                    mensagens_pix[user_id] = []
+                mensagens_pix[user_id].append(msg_enviada.message_id)
+                logger.info(f"💎 Mensagem PIX enviada para {user_id}")
+                
             else:
-                await query.edit_message_text(f"❌ Erro: {result.get('error')}")
+                await msg_loading.delete()
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"❌ Erro ao gerar seu PIX. Por favor, tente novamente.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 TENTAR NOVAMENTE", callback_data="quero_vip")]])
+                )
         else:
-            await query.edit_message_text("❌ Erro na comunicação com gateway de pagamento")
+            await msg_loading.delete()
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="❌ Erro na comunicação com gateway de pagamento",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 TENTAR NOVAMENTE", callback_data="quero_vip")]])
+            )
             
     except Exception as e:
-        logger.error(f"❌ Erro gerando PIX VIP: {e}")
-        await query.edit_message_text("❌ Erro interno do sistema")
+        logger.error(f"❌ Erro CRÍTICO ao processar pagamento para {user_id}: {e}")
+        try:
+            await msg_loading.delete()
+        except:
+            pass
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="❌ Um erro inesperado ocorreu. Tente novamente.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 TENTAR NOVAMENTE", callback_data="quero_vip")]])
+        )
+
+# Handlers para cada plano específico
+async def callback_plano_1mes(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await processar_pagamento_plano(update, context, "ACESSO VIP", 24.90)
+
+async def callback_plano_3meses(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await processar_pagamento_plano(update, context, "VIP + BRINDES", 49.90)
+
+async def callback_plano_1ano(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await processar_pagamento_plano(update, context, "TUDO + CONTATO DIRETO", 67.00)
+
+# Handler para "Já Paguei"
+async def callback_ja_paguei(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    
+    # Extrai o transaction_id do callback_data
+    transaction_id = query.data.split(":")[1] if ":" in query.data else "unknown"
+    
+    logger.info(f"✅ Usuário {user_id} clicou 'Já Paguei' - Transaction: {transaction_id}")
+    
+    await query.edit_message_text(
+        "✅ Obrigada! Estou verificando seu pagamento...\n\n"
+        "📱 Você receberá uma mensagem assim que o pagamento for confirmado!\n\n"
+        "💎 Em poucos minutos você terá acesso ao VIP completo!"
+    )
+
+# Função para old callback (compatibilidade)
+async def vip_options_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback compatibilidade - redireciona para novo sistema"""
+    await callback_quero_vip(update, context)
 
 # ===== APROVAÇÃO DE ENTRADA NO GRUPO =====
 async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -426,6 +604,13 @@ def main():
     # Handlers de Callback (botões)
     application.add_handler(CallbackQueryHandler(step3_previews, pattern='^step3_previews$'))
     application.add_handler(CallbackQueryHandler(vip_options_callback, pattern='^vip_options$'))
+    
+    # Novos handlers do sistema VIP
+    application.add_handler(CallbackQueryHandler(callback_quero_vip, pattern='^quero_vip$'))
+    application.add_handler(CallbackQueryHandler(callback_plano_1mes, pattern='^plano_1mes$'))
+    application.add_handler(CallbackQueryHandler(callback_plano_3meses, pattern='^plano_3meses$'))
+    application.add_handler(CallbackQueryHandler(callback_plano_1ano, pattern='^plano_1ano$'))
+    application.add_handler(CallbackQueryHandler(callback_ja_paguei, pattern='^ja_paguei:'))
     
     # Handler de Pedidos de Entrada
     application.add_handler(ChatJoinRequestHandler(approve_join_request))
