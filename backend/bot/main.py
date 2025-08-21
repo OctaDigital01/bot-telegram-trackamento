@@ -9,8 +9,9 @@ import logging
 import asyncio
 import json
 import base64
-import requests
+import httpx
 from datetime import datetime
+from cachetools import TTLCache
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaVideo, ChatJoinRequest
 from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler, ChatJoinRequestHandler
 from telegram.constants import ParseMode
@@ -56,8 +57,8 @@ except Exception as e:
     logger.error(f"❌ Erro ao conectar PostgreSQL: {e}")
     db = None
 
-def decode_tracking_data(encoded_param):
-    """Decodifica dados de tracking do Xtracky"""
+async def decode_tracking_data(encoded_param):
+    """Decodifica dados de tracking do Xtracky (ASYNC)"""
     try:
         # Verifica se é um ID mapeado (começa com 'M')
         if encoded_param.startswith('M') and len(encoded_param) <= 12:
@@ -65,7 +66,7 @@ def decode_tracking_data(encoded_param):
             
             # Tenta recuperar dados do API Gateway
             try:
-                response = requests.get(f"{API_GATEWAY_URL}/api/tracking/get/{encoded_param}", timeout=5)
+                response = await http_client.get(f"{API_GATEWAY_URL}/api/tracking/get/{encoded_param}")
                 if response.status_code == 200:
                     api_data = response.json()
                     if api_data.get('success') and api_data.get('original'):
@@ -220,11 +221,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args:
         encoded_param = ' '.join(context.args)
         logger.info(f"🔍 Parâmetro recebido: {encoded_param}")
-        tracking_data = decode_tracking_data(encoded_param)
+        tracking_data = await decode_tracking_data(encoded_param)
     else:
         # Busca último tracking disponível
         try:
-            response = requests.get(f"{API_GATEWAY_URL}/api/tracking/latest", timeout=5)
+            response = await http_client.get(f"{API_GATEWAY_URL}/api/tracking/latest")
             if response.status_code == 200:
                 api_data = response.json()
                 if api_data.get('success') and api_data.get('original'):
@@ -244,7 +245,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
         
         logger.info(f"📤 Enviando dados do usuário para API: {user_data}")
-        response = requests.post(f"{API_GATEWAY_URL}/api/users", json=user_data, timeout=5)
+        response = await http_client.post(f"{API_GATEWAY_URL}/api/users", json=user_data)
         if response.status_code == 200:
             logger.info(f"✅ Usuário salvo no banco via API")
         else:
@@ -334,7 +335,7 @@ async def pix_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'plano': 'VIP'
         }
         
-        response = requests.post(f"{API_GATEWAY_URL}/api/pix/gerar", json=pix_data, timeout=10)
+        response = await http_client.post(f"{API_GATEWAY_URL}/api/pix/gerar", json=pix_data)
         
         if response.status_code == 200:
             result = response.json()
@@ -354,11 +355,17 @@ async def pix_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ===== SISTEMA VIP COMPLETO - BASEADO NO SCRIPT FORNECIDO =====
 
-# Caches para controle do fluxo
-usuarios_viram_midias = set()
-usuarios_viram_previews = set()  # Controla quem já viu as prévias automaticamente
-pix_cache = {}
-mensagens_pix = {}
+# Cliente HTTP assíncrono global com pool de conexões
+http_client = httpx.AsyncClient(
+    timeout=10.0,
+    limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
+)
+
+# Caches otimizados com TTL (Time To Live) para evitar memory leaks
+usuarios_viram_midias = TTLCache(maxsize=1000, ttl=3600)  # 1 hora
+usuarios_viram_previews = TTLCache(maxsize=1000, ttl=3600)  # 1 hora
+pix_cache = TTLCache(maxsize=500, ttl=1800)  # 30 minutos
+mensagens_pix = TTLCache(maxsize=500, ttl=3600)  # 1 hora
 
 async def enviar_previews_automatico(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int):
     """Envia prévias automaticamente após 15s se usuário não entrou no grupo"""
@@ -512,7 +519,7 @@ async def processar_pagamento_plano(update: Update, context: ContextTypes.DEFAUL
             'plano': plano
         }
         
-        response = requests.post(f"{API_GATEWAY_URL}/api/pix/gerar", json=pix_data, timeout=10)
+        response = await http_client.post(f"{API_GATEWAY_URL}/api/pix/gerar", json=pix_data)
         
         if response.status_code == 200:
             result = response.json()
@@ -724,7 +731,13 @@ def main():
     logger.info("   ✅ Galeria de prévias (7s delay)")
     logger.info("   ✅ Botões VIP integrados")
     
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    try:
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
+    finally:
+        # Cleanup: Fecha cliente HTTP
+        import asyncio
+        asyncio.run(http_client.aclose())
+        logger.info("🔒 Cliente HTTP fechado")
 
 if __name__ == '__main__':
     main()
