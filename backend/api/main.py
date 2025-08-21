@@ -194,10 +194,16 @@ def gerar_pix():
         
         # Gera PIX REAL via TriboPay API
         tribopay_payload = {
-            "amount": valor,
+            "offer_hash": "VIP_XTRACKY_10",  # Hash da oferta obrigatório
+            "amount": float(valor),
             "description": f"Pagamento {plano} - Sistema Xtracky",
             "external_id": f"user_{user_id}_{int(datetime.now().timestamp())}",
-            "payer_name": user_data.get('first_name', 'Cliente') if user_data else 'Cliente',
+            "payer": {
+                "name": user_data.get('first_name', 'Cliente') if user_data else 'Cliente',
+                "email": f"user{user_id}@xtracky.com",
+                "phone": "11999999999",
+                "document": "00000000000"
+            },
             "webhook_url": "https://api-gateway-production-22bb.up.railway.app/webhook/tribopay",
             "metadata": {
                 "user_id": str(user_id),
