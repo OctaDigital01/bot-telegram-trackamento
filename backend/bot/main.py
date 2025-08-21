@@ -38,12 +38,15 @@ GROUP_VIP_INVITE_LINK = os.getenv('GRUPO_VIP_INVITE_LINK', 'hevG7NzA27YyNzgx')
 ADMIN_ID = int(os.getenv('ADMIN_ID', '908005914'))
 SITE_ANA_CARDOSO = os.getenv('SITE_ANA_CARDOSO', 'https://ana-cardoso.shop')
 
-# File IDs das mídias - NOVOS (21/08/2025)
+# File IDs das mídias
+# APRESENTACAO: Mantém a original (não muda)
+MEDIA_APRESENTACAO = os.getenv('MEDIA_APRESENTACAO', 'AgACAgEAAxkDAAICkGifbTCVRssGewRrBD5ioZ7FHiH7AAISsjEb9OQBRT8IAAFhTPLV2AEAAwIAA3cAAzYE')
+
+# PRÉVIAS VIP: Novas mídias (21/08/2025) 
 MEDIA_VIDEO_QUENTE = os.getenv('MEDIA_VIDEO_QUENTE', 'BAACAgEAAxkDAAIOLWinfTqfJ4SEWvCrHda68K9h70KKAAIbBwACMQFBRR_rsl9biH1zNgQ')
-MEDIA_APRESENTACAO = os.getenv('MEDIA_APRESENTACAO', 'AgACAgEAAxkDAAIOLminfTr7EFz35tBWIMbepmJyuBDDAAIyrTEbMQFBRYIVHNrbPu82AQADAgADeQADNgQ')
-MEDIA_PREVIA_SITE = os.getenv('MEDIA_PREVIA_SITE', 'AgACAgEAAxkDAAIOL2infTsn8XIZPi9hbE1NpNIaKXiMAAIzrTEbMQFBRR63yONsxlHEAQADAgADeQADNgQ')
-MEDIA_PROVOCATIVA = os.getenv('MEDIA_PROVOCATIVA', 'AgACAgEAAxkDAAIOMGinfTyHJB6WxE3A09JJOsfrAonRAAI4rTEbMQFBRVDGNhpvLgs0AQADAgADeQADNgQ')
-MEDIA_VIDEO_SEDUCAO = os.getenv('MEDIA_VIDEO_SEDUCAO', 'BAACAgEAAxkDAAIOLWinfTqfJ4SEWvCrHda68K9h70KKAAIbBwACMQFBRR_rsl9biH1zNgQ')  # Mesmo vídeo do QUENTE
+MEDIA_PREVIA_SITE = os.getenv('MEDIA_PREVIA_SITE', 'AgACAgEAAxkDAAIOL2infTsn8XIZPi9hbE1NpNIaKXiMAAIzrTEbMQFBRR63yONsxlHEAQADAgADeQADNgQ') 
+MEDIA_PROVOCATIVA = os.getenv('MEDIA_PROVOCATIVA', 'AgACAgEAAxkDAAIOMGinfTyHJB6WxE3A09JJOsfrAonRAAI0rTEbMQFBRVDGNhpvLgs0AQADAgADeQADNgQ')
+MEDIA_VIDEO_SEDUCAO = os.getenv('MEDIA_VIDEO_SEDUCAO', 'AgACAgEAAxkDAAIOLminfTr7EFz35tBWIMbepmJyuBDDAAIyrTEbMQFBRYIVHNrbPu82AQADAgADeQADNgQ')
 
 # Database PostgreSQL
 try:
@@ -133,7 +136,11 @@ def process_xtracky_data(data_string):
 async def step3_previews(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Envia a galeria de prévias e as mensagens da Etapa 3"""
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()
+    except Exception as e:
+        logger.warning(f"⚠️ Erro respondendo callback: {e}")
+    
     chat_id = query.message.chat_id
     user_id = query.from_user.id
 
@@ -425,7 +432,10 @@ Vem goz.ar po.rra quentinha pra mim🥵💦⬇️"""
 async def callback_quero_vip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler para quando o usuário clica em 'QUERO ACESSO VIP' - mostra planos"""
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()
+    except Exception as e:
+        logger.warning(f"⚠️ Erro respondendo callback VIP: {e}")
     
     if not query.from_user:
         logger.error("❌ callback_quero_vip: query.from_user é None")
@@ -479,7 +489,10 @@ No VIP você vai ver TUDO sem censura, vídeos completos de mim gozando, chamada
 async def processar_pagamento_plano(update: Update, context: ContextTypes.DEFAULT_TYPE, plano: str, valor: float):
     """Processa a geração de PIX para um plano VIP específico"""
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()
+    except Exception as e:
+        logger.warning(f"⚠️ Erro respondendo callback pagamento: {e}")
     
     user_id = query.from_user.id
     user_name = query.from_user.first_name
@@ -621,7 +634,10 @@ async def callback_plano_1ano(update: Update, context: ContextTypes.DEFAULT_TYPE
 # Handler para "Já Paguei"
 async def callback_ja_paguei(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()
+    except Exception as e:
+        logger.warning(f"⚠️ Erro respondendo callback 'já paguei': {e}")
     user_id = query.from_user.id
     
     # Extrai o transaction_id do callback_data
