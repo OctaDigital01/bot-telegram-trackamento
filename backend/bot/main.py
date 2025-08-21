@@ -12,7 +12,7 @@ import json
 import base64
 import httpx
 from datetime import datetime
-from cachetools import TTLCache
+# from cachetools import TTLCache  # Removido - sem cache
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaVideo, ChatJoinRequest
 from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler, ChatJoinRequestHandler
 from telegram.constants import ParseMode
@@ -80,11 +80,10 @@ CONFIGURACAO_BOT = {
 }
 # ========================================================
 
-# ======== INICIALIZAÇÃO DE CACHES =============
-tracking_cache = TTLCache(maxsize=1000, ttl=14400)
-usuarios_salvos = TTLCache(maxsize=2000, ttl=7200)
-message_cache = TTLCache(maxsize=1000, ttl=3600)  # Cache para IDs de mensagens
-# ===============================================
+# ======== NENHUM CACHE - SEMPRE REINICIA =============
+# Removido: tracking_cache, usuarios_salvos, message_cache
+# Cada /start é um novo começo limpo
+# ====================================================
 
 # ======== CLIENTE HTTP ASSÍNCRONO =============
 http_client = httpx.AsyncClient(
@@ -99,29 +98,25 @@ http_client = httpx.AsyncClient(
 
 async def decode_tracking_data(encoded_param: str):
     #======== DECODIFICA DADOS DE TRACKING =============
-    if encoded_param in tracking_cache: return tracking_cache[encoded_param]
     try:
         if encoded_param.startswith('M') and len(encoded_param) <= 12:
             try:
                 response = await http_client.get(f"{API_GATEWAY_URL}/api/tracking/get/{encoded_param}")
                 if response.status_code == 200 and response.json().get('success'):
                     original_data = json.loads(response.json()['original'])
-                    tracking_cache[encoded_param] = original_data
                     return original_data
             except Exception as e: logger.error(f"❌ Erro API tracking: {e}")
-            result = {'click_id': encoded_param}; tracking_cache[encoded_param] = result; return result
+            return {'click_id': encoded_param}
         try:
             decoded_bytes = base64.b64decode(encoded_param.encode('utf-8'))
             tracking_data = json.loads(decoded_bytes.decode('utf-8'))
-            tracking_cache[encoded_param] = tracking_data
             return tracking_data
         except Exception:
             if '::' in encoded_param:
                 parts = encoded_param.split('::')
                 tracking_data = {k: v for k, v in {'utm_source': parts[0] if len(parts) > 0 else None, 'click_id': parts[1] if len(parts) > 1 else None, 'utm_medium': parts[2] if len(parts) > 2 else None, 'utm_campaign': parts[3] if len(parts) > 3 else None, 'utm_term': parts[4] if len(parts) > 4 else None, 'utm_content': parts[5] if len(parts) > 5 else None}.items() if v}
-                tracking_cache[encoded_param] = tracking_data
                 return tracking_data
-        result = {'click_id': encoded_param}; tracking_cache[encoded_param] = result; return result
+        return {'click_id': encoded_param}
     except Exception as e:
         logger.error(f"❌ Erro decodificação: {e}")
         return {'click_id': encoded_param}
@@ -158,12 +153,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat_id = update.effective_chat.id
     
-    # Proteção contra execução dupla
-    start_key = f"start_protection_{user.id}"
-    if start_key in message_cache:
-        logger.warning(f"⚠️ Comando /start já processado recentemente para {user.id}")
-        return
-    message_cache[start_key] = True
+    # Sem proteção - cada /start é um novo começo
     
     if context.user_data:
         context.user_data['chat_id'] = chat_id
@@ -176,12 +166,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"👤 ETAPA 1: Usuário {user.first_name} ({user.id}) iniciou o bot.")
     
     tracking_data = await decode_tracking_data(' '.join(context.args)) if context.args else {'utm_source': 'direct_bot', 'click_id': 'direct'}
-    if f"user_{user.id}" not in usuarios_salvos:
-        try:
-            user_data = {'telegram_id': user.id, 'username': user.username or user.first_name, 'first_name': user.first_name, 'last_name': user.last_name or '', 'tracking_data': tracking_data}
-            await http_client.post(f"{API_GATEWAY_URL}/api/users", json=user_data)
-            usuarios_salvos[f"user_{user.id}"] = True
-        except Exception as e: logger.error(f"❌ Erro ao salvar usuário {user.id}: {e}")
+    # Sempre salva o usuário - sem cache
+    try:
+        user_data = {'telegram_id': user.id, 'username': user.username or user.first_name, 'first_name': user.first_name, 'last_name': user.last_name or '', 'tracking_data': tracking_data}
+        await http_client.post(f"{API_GATEWAY_URL}/api/users", json=user_data)
+    except Exception as e: logger.error(f"❌ Erro ao salvar usuário {user.id}: {e}")
 
     text = "Meu bem, entra no meu *GRUPINHO GRÁTIS* pra ver daquele jeito q vc gosta 🥵⬇️"
     keyboard = [[InlineKeyboardButton("ENTRAR NO GRUPO 🥵", url=GROUP_INVITE_LINK)]]
