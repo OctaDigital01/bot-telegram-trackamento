@@ -546,7 +546,7 @@
         }
 
         // Handler do botão Telegram
-        function handleTelegramClick() {
+        async function handleTelegramClick() {
             if (!telegramBtn || telegramBtn.disabled) return;
             
             telegramBtn.disabled = true;
@@ -558,23 +558,52 @@
             const trackingData = collectTrackingData();
             log('Tracking data collected', trackingData);
 
-            // Gera ID único para o tracking
-            const shortId = 'M' + Date.now().toString(36).substring(-7);
-            const trackingId = trackingData.click_id || shortId;
-            
-            // URL do bot com tracking ID
-            const botUrl = `https://t.me/anacardoso0408_bot?start=${trackingId}`;
-            
-            log('Bot URL generated', botUrl);
+            // Se temos dados de tracking, precisamos salvá-los
+            if (Object.keys(trackingData).length > 0) {
+                // Gera ID único para mapear os dados
+                const shortId = 'M' + Date.now().toString(36).substring(-7);
+                
+                try {
+                    // Salva tracking completo no API Gateway
+                    const response = await fetch('https://api-gateway-production-22bb.up.railway.app/api/tracking/save', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            safe_id: shortId,
+                            original: JSON.stringify(trackingData)
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        log('✅ Tracking salvo no banco:', shortId);
+                        // Usa o ID mapeado que tem os dados salvos
+                        const botUrl = `https://t.me/anacardoso0408_bot?start=${shortId}`;
+                        log('Bot URL com tracking mapeado:', botUrl);
+                        
+                        // Abre bot no Telegram
+                        window.open(botUrl, '_blank');
+                    } else {
+                        log('❌ Erro ao salvar tracking');
+                        // Fallback: envia só o click_id
+                        const botUrl = `https://t.me/anacardoso0408_bot?start=${trackingData.click_id || 'no_tracking'}`;
+                        window.open(botUrl, '_blank');
+                    }
+                } catch (error) {
+                    log('❌ Erro de conexão:', error);
+                    // Fallback: envia só o click_id
+                    const botUrl = `https://t.me/anacardoso0408_bot?start=${trackingData.click_id || 'no_tracking'}`;
+                    window.open(botUrl, '_blank');
+                }
+            } else {
+                // Sem tracking data, abre bot sem parâmetros
+                const botUrl = `https://t.me/anacardoso0408_bot?start=no_tracking`;
+                window.open(botUrl, '_blank');
+            }
             
             // Atualiza elementos ocultos
-            document.getElementById('botUrl').textContent = botUrl;
             document.getElementById('status').innerHTML = '✅ Link gerado - Acessando conteúdo';
-            
-            // Sem feedback automático
-            
-            // Abre bot no Telegram
-            window.open(botUrl, '_blank');
             
             // Feedback final
             buttonText.innerHTML = '✅ Conteúdo Liberado!';
