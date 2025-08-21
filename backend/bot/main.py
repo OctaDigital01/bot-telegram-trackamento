@@ -164,8 +164,8 @@ async def step3_previews(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.warning(f"⚠️ Erro enviando media group: {e}")
         await context.bot.send_message(chat_id, "🔥 Galeria de prévias (mídias não disponíveis)")
     
-    # Espera 7 segundos
-    await asyncio.sleep(7)
+    # IMEDIATO: Usuário clicou no botão, não precisa esperar
+    logger.info(f"⚡ Enviando mensagens VIP imediatamente para {user_id} (ação manual)")
 
     await context.bot.send_message(
         chat_id=chat_id,
