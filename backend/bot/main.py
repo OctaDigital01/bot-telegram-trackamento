@@ -372,8 +372,7 @@ def main():
 
     logger.info("🤖 === BOT COM FLUXO COMPLETO E APROVAÇÃO AUTOMÁTICA INICIANDO ===")
     
-    from telegram.ext import JobQueue
-    application = Application.builder().token(BOT_TOKEN).job_queue(JobQueue()).build()
+    application = Application.builder().token(BOT_TOKEN).build()
     
     # Registra os handlers de comando, callbacks e pedidos de entrada
     application.add_handler(CommandHandler("start", start_command))
