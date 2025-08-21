@@ -35,7 +35,11 @@ def decode_tracking_data(encoded_param):
                     if api_data.get('success') and api_data.get('original'):
                         original_data = json.loads(api_data['original'])
                         print(f"✅ Dados recuperados do servidor: {original_data}")
-                        return original_data
+                        
+                        # PROCESSA dados concatenados do Xtracky
+                        processed_data = process_xtracky_data(original_data)
+                        print(f"📊 Dados processados: {processed_data}")
+                        return processed_data
                     else:
                         print(f"⚠️ Servidor não encontrou dados para {encoded_param}")
                 else:
@@ -58,8 +62,10 @@ def decode_tracking_data(encoded_param):
             decoded_json = decoded_bytes.decode('utf-8')
             tracking_data = json.loads(decoded_json)
             
-            print(f"✅ Base64 decodificado: {tracking_data}")
-            return tracking_data
+            # PROCESSA dados concatenados do Xtracky
+            processed_data = process_xtracky_data(tracking_data)
+            print(f"✅ Base64 processado: {processed_data}")
+            return processed_data
         
         # Fallback: ID simples
         print(f"⚠️ Usando como click_id direto: {encoded_param}")
@@ -68,6 +74,53 @@ def decode_tracking_data(encoded_param):
     except Exception as e:
         print(f"❌ Erro na decodificação: {e}")
         return {'click_id': encoded_param}
+
+
+def process_xtracky_data(raw_data):
+    """
+    Processa dados do Xtracky para separar parâmetros concatenados
+    Exemplo: "72701474-7e6c-4c87-b84f-836d4547a4bd::Teste_xTracky::::" 
+    """
+    processed = {}
+    
+    for key, value in raw_data.items():
+        if key == 'utm_source' and isinstance(value, str) and '::' in value:
+            # Processa utm_source concatenado do Xtracky
+            print(f"🔍 Processando utm_source concatenado: {value}")
+            
+            # Divide por '::'
+            parts = value.split('::')
+            print(f"📋 Partes identificadas: {parts}")
+            
+            # Mapeamento baseado na estrutura observada
+            if len(parts) >= 6:
+                processed['utm_source'] = parts[0] if parts[0] else None  # Token Xtracky
+                processed['click_id'] = parts[1] if parts[1] else None     # Click ID real
+                processed['utm_medium'] = parts[2] if parts[2] else None   # Medium
+                processed['utm_campaign'] = parts[3] if parts[3] else None # Campaign
+                processed['utm_term'] = parts[4] if parts[4] else None     # Term
+                processed['utm_content'] = parts[5] if parts[5] else None  # Content
+            elif len(parts) >= 2:
+                # Formato mínimo
+                processed['utm_source'] = parts[0]
+                processed['click_id'] = parts[1]
+                
+            # Remove valores vazios/None
+            processed = {k: v for k, v in processed.items() if v}
+            
+        elif key == 'click_id':
+            # Click_id direto
+            processed['click_id'] = value
+        else:
+            # Outros parâmetros passam direto
+            processed[key] = value
+    
+    # Garante que sempre tem click_id
+    if 'click_id' not in processed:
+        processed['click_id'] = raw_data.get('click_id', 'unknown')
+    
+    print(f"✅ Dados processados: {processed}")
+    return processed
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler do comando /start - decodifica parâmetros completos"""

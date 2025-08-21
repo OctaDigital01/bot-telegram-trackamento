@@ -132,6 +132,90 @@ def handle_tribopay_webhook():
         logger.error(f"❌ Erro ao processar webhook TriboPay: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/tracking/get/<mapping_id>', methods=['GET'])
+def get_tracking_data(mapping_id):
+    """
+    Endpoint para recuperar dados de tracking mapeados
+    """
+    try:
+        import os
+        click_mapping_path = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'click_mapping.json')
+        
+        if not os.path.exists(click_mapping_path):
+            return jsonify({'success': False, 'error': 'Arquivo de mapeamento não encontrado'}), 404
+        
+        with open(click_mapping_path, 'r') as f:
+            click_mapping = json.load(f)
+        
+        if mapping_id not in click_mapping:
+            logger.warning(f"ID mapeado não encontrado: {mapping_id}")
+            return jsonify({'success': False, 'error': 'ID não encontrado'}), 404
+        
+        mapping_data = click_mapping[mapping_id]
+        original_data = mapping_data.get('original', '{}')
+        
+        logger.info(f"📥 Recuperando dados para ID {mapping_id}: {original_data}")
+        
+        return jsonify({
+            'success': True,
+            'mapping_id': mapping_id,
+            'original': original_data,
+            'created': mapping_data.get('created')
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao recuperar dados de tracking: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/tracking/latest', methods=['GET'])
+def get_latest_tracking():
+    """
+    Endpoint para recuperar o último tracking salvo (para novos usuários)
+    """
+    try:
+        import os
+        click_mapping_path = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'click_mapping.json')
+        
+        if not os.path.exists(click_mapping_path):
+            return jsonify({'success': False, 'error': 'Arquivo de mapeamento não encontrado'}), 404
+        
+        with open(click_mapping_path, 'r') as f:
+            click_mapping = json.load(f)
+        
+        if not click_mapping:
+            return jsonify({'success': False, 'error': 'Nenhum tracking disponível'}), 404
+        
+        # Encontra o mais recente (por data de criação)
+        latest_entry = None
+        latest_time = None
+        
+        for mapping_id, data in click_mapping.items():
+            created_time = data.get('created')
+            if created_time and (latest_time is None or created_time > latest_time):
+                latest_time = created_time
+                latest_entry = {
+                    'mapping_id': mapping_id,
+                    'original': data.get('original', '{}'),
+                    'created': created_time
+                }
+        
+        if latest_entry:
+            logger.info(f"📥 Recuperando último tracking: {latest_entry}")
+            return jsonify({
+                'success': True,
+                'safe_id': latest_entry['mapping_id'],
+                'original': latest_entry['original'],
+                'created': latest_entry['created']
+            })
+        else:
+            return jsonify({'success': False, 'error': 'Nenhum tracking válido encontrado'}), 404
+            
+    except Exception as e:
+        logger.error(f"❌ Erro ao recuperar último tracking: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint"""
@@ -144,14 +228,17 @@ def health():
 
 def run_webhook_server():
     """Executa servidor webhook em thread separada"""
+    import os
     port = config.WEBHOOK_PORT
     logger.info(f"🚀 Iniciando servidor webhook na porta {port}")
     if os.getenv('RAILWAY_ENVIRONMENT'):
         webhook_url = os.getenv('RAILWAY_STATIC_URL', 'railway-app.railway.app')
         logger.info(f"📡 Webhook TriboPay: https://{webhook_url}/webhook/tribopay")
+        logger.info(f"📡 API Tracking: https://{webhook_url}/api/tracking/")
         logger.info(f"❤️ Health check: https://{webhook_url}/health")
     else:
         logger.info(f"📡 Webhook TriboPay: http://localhost:{port}/webhook/tribopay")
+        logger.info(f"📡 API Tracking: http://localhost:{port}/api/tracking/")
         logger.info(f"❤️ Health check: http://localhost:{port}/health")
     
     app.run(
