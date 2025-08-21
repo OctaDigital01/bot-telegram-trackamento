@@ -61,6 +61,12 @@ except Exception as e:
 tracking_cache = TTLCache(maxsize=500, ttl=7200)  # 2 horas
 usuarios_salvos = TTLCache(maxsize=1000, ttl=3600)  # 1 hora
 
+# Caches para controle de fluxo do bot
+usuarios_viram_midias = TTLCache(maxsize=1000, ttl=3600)  # 1 hora
+usuarios_viram_previews = TTLCache(maxsize=1000, ttl=3600)  # 1 hora
+pix_cache = TTLCache(maxsize=500, ttl=1800)  # 30 minutos
+mensagens_pix = TTLCache(maxsize=500, ttl=3600)  # 1 hora
+
 async def decode_tracking_data(encoded_param):
     """Decodifica dados de tracking do Xtracky (ASYNC) com cache"""
     try:
@@ -150,32 +156,53 @@ async def step3_previews(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Envia a galeria de prévias e as mensagens da Etapa 3"""
     query = update.callback_query
     
+    logger.info(f"🔥 CALLBACK STEP3_PREVIEWS RECEBIDO - User: {query.from_user.id}")
+    
     # Resposta instantânea
     try:
         await query.answer()
-    except:
-        pass
+        logger.info(f"✅ Query answer enviado para {query.from_user.id}")
+    except Exception as e:
+        logger.error(f"❌ Erro query answer: {e}")
     
     chat_id = query.message.chat_id
     user_id = query.from_user.id
 
     # Marca que usuário viu prévias manualmente (cancela envio automático)
-    usuarios_viram_previews[user_id] = True
+    try:
+        usuarios_viram_previews[user_id] = True
+        logger.info(f"✅ Usuário {user_id} marcado como viu prévias")
+    except Exception as e:
+        logger.error(f"❌ Erro marcando usuário previews: {e}")
 
-    logger.info(f"⚡ Prévias para {user_id}")
+    logger.info(f"⚡ Iniciando prévias para {user_id}")
 
     # PRIMEIRO: Resposta imediata com texto
-    await query.edit_message_text(
-        text="🔥 Carregando suas prévias exclusivas...",
-        reply_markup=None
-    )
+    try:
+        await query.edit_message_text(
+            text="🔥 Carregando suas prévias exclusivas...",
+            reply_markup=None
+        )
+        logger.info(f"✅ Mensagem de carregamento editada para {user_id}")
+    except Exception as e:
+        logger.error(f"❌ Erro editando mensagem carregamento: {e}")
 
     # DEPOIS: Envia mídias em paralelo (sem aguardar)
+    logger.info(f"🚀 Criando task assíncrona para {user_id}")
     context.application.create_task(send_previews_async(context, chat_id, user_id))
 
 async def send_previews_async(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int):
     """Envia prévias de forma assíncrona para não bloquear UI"""
+    logger.info(f"🎬 INICIANDO SEND_PREVIEWS_ASYNC para usuário {user_id}")
+    
     try:
+        # Verifica se as variáveis de mídia estão definidas
+        logger.info(f"📱 Verificando mídias:")
+        logger.info(f"  VIDEO_QUENTE: {MEDIA_VIDEO_QUENTE[:20] if MEDIA_VIDEO_QUENTE else 'VAZIO'}...")
+        logger.info(f"  APRESENTACAO: {MEDIA_APRESENTACAO[:20] if MEDIA_APRESENTACAO else 'VAZIO'}...")
+        logger.info(f"  PREVIA_SITE: {MEDIA_PREVIA_SITE[:20] if MEDIA_PREVIA_SITE else 'VAZIO'}...")
+        logger.info(f"  PROVOCATIVA: {MEDIA_PROVOCATIVA[:20] if MEDIA_PROVOCATIVA else 'VAZIO'}...")
+        
         # Media group
         media_group = [
             InputMediaVideo(media=MEDIA_VIDEO_QUENTE),
@@ -184,7 +211,9 @@ async def send_previews_async(context: ContextTypes.DEFAULT_TYPE, chat_id: int, 
             InputMediaPhoto(media=MEDIA_PROVOCATIVA),
         ]
         
+        logger.info(f"📤 Enviando media group com {len(media_group)} mídias para {user_id}")
         await context.bot.send_media_group(chat_id=chat_id, media=media_group)
+        logger.info(f"✅ Media group enviado com sucesso para {user_id}")
         
         # Mensagem final com botão VIP
         text_vip = """Gostou do que viu, meu bem 🤭?
@@ -382,13 +411,7 @@ http_client = httpx.AsyncClient(
     limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
 )
 
-# Caches otimizados com TTL (Time To Live) para evitar memory leaks
-usuarios_viram_midias = TTLCache(maxsize=1000, ttl=3600)  # 1 hora
-usuarios_viram_previews = TTLCache(maxsize=1000, ttl=3600)  # 1 hora
-pix_cache = TTLCache(maxsize=500, ttl=1800)  # 30 minutos
-mensagens_pix = TTLCache(maxsize=500, ttl=3600)  # 1 hora
-
-# (Cache HTTP movido para o topo do arquivo)
+# (Caches movidos para o topo do arquivo antes das funções)
 
 async def enviar_previews_automatico(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int):
     """Envia prévias automaticamente após 15s se usuário não entrou no grupo"""
