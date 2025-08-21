@@ -203,6 +203,10 @@ async def send_previews_async(context: ContextTypes.DEFAULT_TYPE, chat_id: int, 
         logger.info(f"  PREVIA_SITE: {MEDIA_PREVIA_SITE[:20] if MEDIA_PREVIA_SITE else 'VAZIO'}...")
         logger.info(f"  PROVOCATIVA: {MEDIA_PROVOCATIVA[:20] if MEDIA_PROVOCATIVA else 'VAZIO'}...")
         
+        # Validação crítica: verifica se todas as mídias estão configuradas
+        if not all([MEDIA_VIDEO_QUENTE, MEDIA_APRESENTACAO, MEDIA_PREVIA_SITE, MEDIA_PROVOCATIVA]):
+            raise ValueError("❌ Uma ou mais variáveis de mídia não configuradas no Railway")
+        
         # Media group
         media_group = [
             InputMediaVideo(media=MEDIA_VIDEO_QUENTE),
@@ -212,7 +216,11 @@ async def send_previews_async(context: ContextTypes.DEFAULT_TYPE, chat_id: int, 
         ]
         
         logger.info(f"📤 Enviando media group com {len(media_group)} mídias para {user_id}")
-        await context.bot.send_media_group(chat_id=chat_id, media=media_group)
+        # TIMEOUT DE 10 SEGUNDOS para evitar travamento
+        await asyncio.wait_for(
+            context.bot.send_media_group(chat_id=chat_id, media=media_group),
+            timeout=10.0
+        )
         logger.info(f"✅ Media group enviado com sucesso para {user_id}")
         
         # Mensagem final com botão VIP
@@ -323,14 +331,20 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [[InlineKeyboardButton("VER CONTEÚDINHO DE GRAÇA 🔥🥵", callback_data='step3_previews')]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        # Tenta enviar com foto, se falhar envia só texto
+        # Tenta enviar com foto, se falhar envia só texto (COM TIMEOUT)
         try:
-            await update.message.reply_photo(
-                photo=MEDIA_APRESENTACAO,
-                caption=text,
-                reply_markup=reply_markup
-            )
-        except Exception as e:
+            if MEDIA_APRESENTACAO:
+                await asyncio.wait_for(
+                    update.message.reply_photo(
+                        photo=MEDIA_APRESENTACAO,
+                        caption=text,
+                        reply_markup=reply_markup
+                    ),
+                    timeout=8.0
+                )
+            else:
+                raise ValueError("MEDIA_APRESENTACAO não configurada")
+        except (asyncio.TimeoutError, Exception) as e:
             logger.warning(f"⚠️ Erro enviando foto para membro: {e}")
             await update.message.reply_text(
                 text=text,
@@ -353,15 +367,21 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("MEU GRUPINHO🥵?", url=GROUP_INVITE_LINK)]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    # Tenta enviar com foto, se falhar envia só texto
+    # Tenta enviar com foto, se falhar envia só texto (COM TIMEOUT)
     try:
-        await update.message.reply_photo(
-            photo=MEDIA_APRESENTACAO,
-            caption=text,
-            reply_markup=reply_markup,
-            parse_mode=ParseMode.MARKDOWN
-        )
-    except Exception as e:
+        if MEDIA_APRESENTACAO:
+            await asyncio.wait_for(
+                update.message.reply_photo(
+                    photo=MEDIA_APRESENTACAO,
+                    caption=text,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.MARKDOWN
+                ),
+                timeout=8.0
+            )
+        else:
+            raise ValueError("MEDIA_APRESENTACAO não configurada")
+    except (asyncio.TimeoutError, Exception) as e:
         logger.warning(f"⚠️ Erro enviando foto de start: {e}")
         await update.message.reply_text(
             text=text,
@@ -435,8 +455,12 @@ async def enviar_previews_automatico(context: ContextTypes.DEFAULT_TYPE, chat_id
         
         logger.info(f"⏰ Enviando prévias automaticamente para usuário {user_id} após 15s")
         
-        # Envia as 4 mídias
+        # Envia as 4 mídias (COM VALIDAÇÃO E FALLBACK)
         try:
+            # Verifica se todas as mídias estão disponíveis
+            if not all([MEDIA_VIDEO_QUENTE, MEDIA_APRESENTACAO, MEDIA_PREVIA_SITE, MEDIA_PROVOCATIVA]):
+                raise ValueError("Uma ou mais mídias não estão configuradas")
+                
             media_group = [
                 InputMediaVideo(media=MEDIA_VIDEO_QUENTE),
                 InputMediaPhoto(media=MEDIA_APRESENTACAO),
@@ -444,11 +468,23 @@ async def enviar_previews_automatico(context: ContextTypes.DEFAULT_TYPE, chat_id
                 InputMediaPhoto(media=MEDIA_PROVOCATIVA),
             ]
             
-            await context.bot.send_media_group(chat_id=chat_id, media=media_group)
+            # TIMEOUT DE 10 SEGUNDOS para evitar travamento
+            await asyncio.wait_for(
+                context.bot.send_media_group(chat_id=chat_id, media=media_group),
+                timeout=10.0
+            )
             logger.info(f"✅ Media group automático enviado para {user_id}")
+        except asyncio.TimeoutError:
+            logger.warning(f"⚠️ Timeout enviando media group automático para {user_id}")
+            await context.bot.send_message(chat_id, "🔥 Galeria de prévias (carregamento lento, conteúdo chegando...)")
         except Exception as e:
             logger.warning(f"⚠️ Erro enviando media group automático: {e}")
-            await context.bot.send_message(chat_id, "🔥 Galeria de prévias (mídias não disponíveis)")
+            # FALLBACK: Envia mensagem alternativa SEM TRAVAR
+            try:
+                await context.bot.send_message(chat_id, "🔥 Suas prévias exclusivas estão chegando... (problema temporário com galeria)")
+            except Exception as fallback_error:
+                logger.error(f"❌ Fallback também falhou para {user_id}: {fallback_error}")
+                # NÃO TRAVA - continua o fluxo
         
         # Espera 7 segundos
         await asyncio.sleep(7)
