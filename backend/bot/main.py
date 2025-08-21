@@ -33,11 +33,11 @@ GROUP_ID = int(os.getenv('GROUP_ID', '-1002342384678'))
 GROUP_INVITE_LINK = os.getenv('GROUP_INVITE_LINK', 'https://t.me/+iydDH1RTDPJlNTNh')
 
 # File IDs das mídias
-START_IMAGE_ID = os.getenv('START_IMAGE_ID', 'AgACAgEAAxkBAAIikminXIWOkl4Ru-3c7KFTNPmeUA6QAALsrjEbglU4RYKi9nkfTnf8AQADAgADeQADNgQ')
-PREVIEW_VIDEO_ID = os.getenv('PREVIEW_VIDEO_ID', 'BAACAgEAAxkBAAIilminXJOuWQ9uS_ZNt6seh7JKYoOHAAJtBgACglU4RRTfnPJAqPT3NgQ')
-PREVIEW_IMAGE_1_ID = os.getenv('PREVIEW_IMAGE_1_ID', 'AgACAgEAAxkBAAIimminXJm9zlFbOKnhm3NO2CwyYo8kAALtrjEbglU4RfgJ-nP8LfvFAQADAgADeQADNgQ')
-PREVIEW_IMAGE_2_ID = os.getenv('PREVIEW_IMAGE_2_ID', 'AgACAgEAAxkBAAIinminXKGMK_ue_HOK0Va36FJWO66vAALurjEbglU4RbhisJEkbnbqAQADAgADeQADNgQ')
-PREVIEW_IMAGE_3_ID = os.getenv('PREVIEW_IMAGE_3_ID', 'AgACAgEAAxkBAAIiominXKpBBmO4jkUUhssoYeHj57hUAALvrjEbglU4RYevSIpIW_DuAQADAgADeQADNgQ')
+START_IMAGE_ID = os.getenv('START_IMAGE_ID', 'AgACAgEAAxkDAAIGVmigsDHt4ov5fvN46eTqIfdHYVI1AAJKtzEbbGMBReAKfnNQDzqgAQADAgADdwADNgQ')
+MEDIA_VIDEO_1 = os.getenv('MEDIA_VIDEO_1', 'BAACAgEAAxkDAAIGVWigsDCQDYM4PsCosmPk2rYt9GOtAAJ6BgACbGMBRdLyaFfDZvcdNgQ')
+MEDIA_FOTO_1 = os.getenv('MEDIA_FOTO_1', 'AgACAgEAAxkDAAIGVmigsDHt4ov5fvN46eTqIfdHYVI1AAJKtzEbbGMBReAKfnNQDzqgAQADAgADdwADNgQ')
+MEDIA_FOTO_2 = os.getenv('MEDIA_FOTO_2', 'AgACAgEAAxkDAAIGV2igsDLSbp5a63k7GIhyxvRDoGNaAAJLtzEbbGMBRexpIw91lSiDAQADAgADdwADNgQ')
+MEDIA_FOTO_3 = os.getenv('MEDIA_FOTO_3', 'AgACAgEAAxkDAAIGWGigsDNOLNvO5hSMlmeuzo2EZAX2AAJMtzEbbGMBRSYr21qypjsBAQADAgADdwADNgQ')
 
 # Database PostgreSQL
 try:
@@ -135,13 +135,14 @@ async def step3_previews(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Tenta enviar media group, se falhar envia mensagens individuais
     try:
         media_group = [
-            InputMediaVideo(media=PREVIEW_VIDEO_ID),
-            InputMediaPhoto(media=PREVIEW_IMAGE_1_ID),
-            InputMediaPhoto(media=PREVIEW_IMAGE_2_ID),
-            InputMediaPhoto(media=PREVIEW_IMAGE_3_ID),
+            InputMediaVideo(media=MEDIA_VIDEO_1),
+            InputMediaPhoto(media=MEDIA_FOTO_1),
+            InputMediaPhoto(media=MEDIA_FOTO_2),
+            InputMediaPhoto(media=MEDIA_FOTO_3),
         ]
         
         await context.bot.send_media_group(chat_id=chat_id, media=media_group)
+        logger.info(f"✅ Media group enviado com sucesso")
     except Exception as e:
         logger.warning(f"⚠️ Erro enviando media group: {e}")
         await context.bot.send_message(chat_id, "🔥 Galeria de prévias (mídias não disponíveis)")
