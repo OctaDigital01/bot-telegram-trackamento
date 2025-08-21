@@ -135,12 +135,8 @@ async def remove_job_if_exists(name: str, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def delete_message_if_exists(context: ContextTypes.DEFAULT_TYPE, key: str, chat_id: int = None):
     #======== DELETA MENSAGEM ANTERIOR =============
-    if key in message_cache and chat_id:
-        try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=message_cache[key])
-            del message_cache[key]
-        except BadRequest as e:
-            logger.warning(f"Não foi possível deletar a mensagem {message_cache.get(key)}: {e}")
+    # Sem cache - não deleta mensagens anteriores
+    pass
     #================= FECHAMENTO ======================
 
 # ==============================================================================
@@ -240,7 +236,7 @@ async def job_etapa2_prompt_previa(context: ContextTypes.DEFAULT_TYPE):
     text = "Quer ver um pedacinho do que te espera... 🔥 (É DE GRAÇA!!!) ⬇️"
     keyboard = [[InlineKeyboardButton("QUERO VER UMA PRÉVIA 🔥🥵", callback_data='trigger_etapa3')]]
     msg = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
-    message_cache[f"etapa2_msg_{chat_id}"] = msg.message_id
+    # Sem cache - não salva message_id
     
     if context.job_queue:
         context.job_queue.run_once(job_etapa3_galeria, CONFIGURACAO_BOT["DELAYS"]["ETAPA_3_GALERIA"], chat_id=chat_id, name=f"job_etapa3_{chat_id}")
@@ -272,7 +268,7 @@ async def job_etapa3_galeria(context: ContextTypes.DEFAULT_TYPE, chat_id_manual=
     text_vip = "Gostou do que viu, meu bem 🤭?\n\nTenho muito mais no VIP pra você (TOTALMENTE SEM CENSURA).\n\nVem gozar porra quentinha pra mim🥵💦⬇️"
     keyboard = [[InlineKeyboardButton("CONHECER O VIP🔥", callback_data='trigger_etapa4')]]
     msg = await context.bot.send_message(chat_id=chat_id, text=text_vip, reply_markup=InlineKeyboardMarkup(keyboard))
-    message_cache[f'etapa3_msg_{chat_id}'] = msg.message_id
+    # Sem cache - não salva message_id
 
     if context.job_queue:
         context.job_queue.run_once(job_etapa4_planos_vip, CONFIGURACAO_BOT["DELAYS"]["ETAPA_4_PLANOS_VIP"], chat_id=chat_id, name=f"job_etapa4_{chat_id}")
@@ -301,7 +297,7 @@ async def job_etapa4_planos_vip(context: ContextTypes.DEFAULT_TYPE, chat_id_manu
     texto_planos = "No VIP você vai ver TUDO sem censura, vídeos completos de mim gozando, chamadas privadas e muito mais!\n\n<b>Escolhe o seu acesso especial:</b>"
     keyboard = [[InlineKeyboardButton(p["botao_texto"], callback_data=f"plano:{p['id']}")] for p in VIP_PLANS.values()]
     msg = await context.bot.send_message(chat_id=chat_id, text=texto_planos, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-    message_cache[f'etapa4_msg_{chat_id}'] = msg.message_id
+    # Sem cache - não salva message_id
 
     if context.job_queue:
         context.job_queue.run_once(job_etapa5_remarketing, CONFIGURACAO_BOT["DELAYS"]["ETAPA_5_REMARKETING"], chat_id=chat_id, name=f"job_etapa5_{chat_id}")
