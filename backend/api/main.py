@@ -214,6 +214,8 @@ def gerar_pix():
         # Busca dados do usuário no PostgreSQL
         if db:
             user_data = db.get_user(int(user_id))
+            logger.info(f"👤 Dados do usuário encontrados: {dict(user_data) if user_data else 'None'}")
+            
             if user_data:
                 tracking_data = {
                     'click_id': user_data.get('click_id'),
@@ -223,8 +225,10 @@ def gerar_pix():
                     'utm_term': user_data.get('utm_term'),
                     'utm_content': user_data.get('utm_content')
                 }
+                logger.info(f"🎯 Tracking extraído do banco: {tracking_data}")
             else:
                 tracking_data = {}
+                logger.warning(f"⚠️ Usuário {user_id} não encontrado no banco")
         else:
             return jsonify({'success': False, 'error': 'Database not available'}), 500
         
@@ -392,7 +396,10 @@ def tribopay_webhook():
         
         # Processa webhook TriboPay real (formato atualizado)
         transaction_data = webhook_data.get('transaction', {})
-        transaction_id = transaction_data.get('id') or webhook_data.get('token')
+        transaction_id = (transaction_data.get('id') or 
+                         webhook_data.get('token') or 
+                         webhook_data.get('transaction_id') or
+                         webhook_data.get('id'))
         status = webhook_data.get('status') or transaction_data.get('status')
         event_type = webhook_data.get('event')
         
