@@ -137,10 +137,12 @@ def process_xtracky_data(data_string):
 async def step3_previews(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Envia a galeria de prévias e as mensagens da Etapa 3"""
     query = update.callback_query
+    
+    # Resposta instantânea
     try:
         await query.answer()
-    except Exception as e:
-        logger.warning(f"⚠️ Erro respondendo callback: {e}")
+    except:
+        pass
     
     chat_id = query.message.chat_id
     user_id = query.from_user.id
@@ -148,10 +150,21 @@ async def step3_previews(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Marca que usuário viu prévias manualmente (cancela envio automático)
     usuarios_viram_previews[user_id] = True
 
-    logger.info(f"Enviando Etapa 3 (Prévias) manualmente para o chat {chat_id}")
+    logger.info(f"⚡ Prévias para {user_id}")
 
-    # Tenta enviar media group, se falhar envia mensagens individuais
+    # PRIMEIRO: Resposta imediata com texto
+    await query.edit_message_text(
+        text="🔥 Carregando suas prévias exclusivas...",
+        reply_markup=None
+    )
+
+    # DEPOIS: Envia mídias em paralelo (sem aguardar)
+    context.application.create_task(send_previews_async(context, chat_id, user_id))
+
+async def send_previews_async(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int):
+    """Envia prévias de forma assíncrona para não bloquear UI"""
     try:
+        # Media group
         media_group = [
             InputMediaVideo(media=MEDIA_VIDEO_QUENTE),
             InputMediaPhoto(media=MEDIA_APRESENTACAO),
@@ -160,20 +173,10 @@ async def step3_previews(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         
         await context.bot.send_media_group(chat_id=chat_id, media=media_group)
-        logger.info(f"✅ Media group enviado com sucesso")
-    except Exception as e:
-        logger.warning(f"⚠️ Erro enviando media group: {e}")
-        await context.bot.send_message(chat_id, "🔥 Galeria de prévias (mídias não disponíveis)")
-    
-    # IMEDIATO: Usuário clicou no botão, não precisa esperar
-    logger.info(f"⚡ Enviando mensagens VIP imediatamente para {user_id} (ação manual)")
+        
+        # Mensagem final com botão VIP
+        text_vip = """Gostou do que viu, meu bem 🤭?
 
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text="Gostou do que viu, meu bem 🤭?"
-    )
-    
-    text2 = """
 Tenho muito mais no VIP pra você (TOTALMENTE SEM CENSURA):
 💎 Vídeos e fotos do jeitinho que você gosta...
 💎 Videos exclusivo pra você, te fazendo go.zar só eu e você
@@ -183,14 +186,22 @@ Tenho muito mais no VIP pra você (TOTALMENTE SEM CENSURA):
 
 Vem goz.ar po.rra quentinha pra mim🥵💦⬇️"""
 
-    keyboard = [[InlineKeyboardButton("CONHECER O VIP🔥", callback_data='quero_vip')]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text=text2,
-        reply_markup=reply_markup
-    )
+        keyboard = [[InlineKeyboardButton("CONHECER O VIP🔥", callback_data='quero_vip')]]
+        
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=text_vip,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        logger.info(f"✅ Prévias completas para {user_id}")
+        
+    except Exception as e:
+        logger.error(f"❌ Erro prévias async {user_id}: {e}")
+        await context.bot.send_message(
+            chat_id=chat_id, 
+            text="🔥 Galeria temporariamente indisponível, mas o VIP está funcionando!",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("CONHECER O VIP🔥", callback_data='quero_vip')]])
+        )
 
 # ===== ETAPA 2: BOAS-VINDAS =====
 async def send_step2_message(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
