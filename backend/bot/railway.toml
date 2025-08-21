@@ -4,9 +4,19 @@ builder = "nixpacks"
 [deploy]
 startCommand = "python3 main.py"
 restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 3
+restartPolicyMaxRetries = 2
 
+[build.watchPatterns]
+paths = ["main.py", "database.py", "requirements.txt"]
+
+# Configurações otimizadas para produção
 [environments.production.variables]
-# Python
 PYTHONPATH = "."
 PYTHONUNBUFFERED = "1"
+
+# ⚠️ IMPORTANTE: Configure estas variáveis no Railway Dashboard
+# MEDIA_APRESENTACAO=AgACAgEAAxkDAAICkGifbTCVRssGewRrBD5ioZ7FHiH7AAISsjEb9OQBRT8IAAFhTPLV2AEAAwIAA3cAAzYE
+# MEDIA_VIDEO_QUENTE=BAACAgEAAxkDAAIOLWinfTqfJ4SEWvCrHda68K9h70KKAAIbBwACMQFBRR_rsl9biH1zNgQ
+# MEDIA_PREVIA_SITE=AgACAgEAAxkDAAIOL2infTsn8XIZPi9hbE1NpNIaKXiMAAIzrTEbMQFBRR63yONsxlHEAQADAgADeQADNgQ
+# MEDIA_PROVOCATIVA=AgACAgEAAxkDAAIOMGinfTyHJB6WxE3A09JJOsfrAonRAAI0rTEbMQFBRVDGNhpvLgs0AQADAgADeQADNgQ
+# MEDIA_VIDEO_SEDUCAO=AgACAgEAAxkDAAIOLminfTr7EFz35tBWIMbepmJyuBDDAAIyrTEbMQFBRYIVHNrbPu82AQADAgADeQADNgQ
