@@ -158,7 +158,7 @@ async def step3_previews(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await context.bot.send_message(
         chat_id=chat_id,
-        text="Gostou do que viu, meu bem 🤭?\n\nEssa é só uma PRÉVIA borrada do que te espera bb... 💦"
+        text="Gostou do que viu, meu bem 🤭?"
     )
     
     text2 = """
