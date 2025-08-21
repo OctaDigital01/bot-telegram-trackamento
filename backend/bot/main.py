@@ -71,7 +71,7 @@ REMARKETING_PLAN = {
 # ======== CONFIGURAÇÃO DE DELAYS E TIMEOUTS =============
 CONFIGURACAO_BOT = {
     "DELAYS": {
-        "ETAPA_2_PROMPT_PREVIA": 2,       # (2s) Tempo para enviar o prompt de prévia (fallback)
+        "ETAPA_2_PROMPT_PREVIA": 20,      # (20s) Tempo para enviar o prompt de prévia se não clicou
         "ETAPA_3_GALERIA": 5,             # (5s) Tempo para enviar a galeria de mídias
         "ETAPA_4_PLANOS_VIP": 30,         # (30s) Tempo para enviar os planos VIP
         "ETAPA_5_REMARKETING": 300,       # (5min) Tempo para enviar a oferta de remarketing
@@ -83,6 +83,7 @@ CONFIGURACAO_BOT = {
 # ======== INICIALIZAÇÃO DE CACHES =============
 tracking_cache = TTLCache(maxsize=1000, ttl=14400)
 usuarios_salvos = TTLCache(maxsize=2000, ttl=7200)
+message_cache = TTLCache(maxsize=1000, ttl=3600)  # Cache para IDs de mensagens
 # ===============================================
 
 # ======== CLIENTE HTTP ASSÍNCRONO =============
@@ -137,14 +138,14 @@ async def remove_job_if_exists(name: str, context: ContextTypes.DEFAULT_TYPE) ->
     return True
     #================= FECHAMENTO ======================
 
-async def delete_message_if_exists(context: ContextTypes.DEFAULT_TYPE, key: str):
+async def delete_message_if_exists(context: ContextTypes.DEFAULT_TYPE, key: str, chat_id: int = None):
     #======== DELETA MENSAGEM ANTERIOR =============
-    if key in context.user_data:
+    if key in message_cache and chat_id:
         try:
-            await context.bot.delete_message(chat_id=context.user_data['chat_id'], message_id=context.user_data[key])
+            await context.bot.delete_message(chat_id=chat_id, message_id=message_cache[key])
+            del message_cache[key]
         except BadRequest as e:
-            logger.warning(f"Não foi possível deletar a mensagem {context.user_data[key]}: {e}")
-        del context.user_data[key]
+            logger.warning(f"Não foi possível deletar a mensagem {message_cache.get(key)}: {e}")
     #================= FECHAMENTO ======================
 
 # ==============================================================================
@@ -156,7 +157,16 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     #======== GERENCIA O COMANDO /START =============
     user = update.effective_user
     chat_id = update.effective_chat.id
-    context.user_data['chat_id'] = chat_id
+    
+    # Proteção contra execução dupla
+    start_key = f"start_protection_{user.id}"
+    if start_key in message_cache:
+        logger.warning(f"⚠️ Comando /start já processado recentemente para {user.id}")
+        return
+    message_cache[start_key] = True
+    
+    if context.user_data:
+        context.user_data['chat_id'] = chat_id
     
     # Armazena o mapeamento de user_id para chat_id para uso posterior
     if 'user_chat_map' not in context.bot_data:
@@ -241,7 +251,7 @@ async def job_etapa2_prompt_previa(context: ContextTypes.DEFAULT_TYPE):
     text = "Quer ver um pedacinho do que te espera... 🔥 (É DE GRAÇA!!!) ⬇️"
     keyboard = [[InlineKeyboardButton("QUERO VER UMA PRÉVIA 🔥🥵", callback_data='trigger_etapa3')]]
     msg = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
-    context.user_data['etapa2_msg_id'] = msg.message_id
+    message_cache[f"etapa2_msg_{chat_id}"] = msg.message_id
     
     if context.job_queue:
         context.job_queue.run_once(job_etapa3_galeria, CONFIGURACAO_BOT["DELAYS"]["ETAPA_3_GALERIA"], chat_id=chat_id, name=f"job_etapa3_{chat_id}")
@@ -257,7 +267,7 @@ async def callback_trigger_etapa3(update: Update, context: ContextTypes.DEFAULT_
     chat_id = query.message.chat_id
     logger.info(f"👤 ETAPA 3: Usuário {chat_id} clicou para ver prévias.")
     await remove_job_if_exists(f"job_etapa3_{chat_id}", context)
-    await delete_message_if_exists(context, 'etapa2_msg_id')
+    await delete_message_if_exists(context, f'etapa2_msg_{chat_id}', chat_id)
     await job_etapa3_galeria(context, chat_id_manual=chat_id)
     #================= FECHAMENTO ======================
 
@@ -265,7 +275,7 @@ async def job_etapa3_galeria(context: ContextTypes.DEFAULT_TYPE, chat_id_manual=
     #======== ENVIA GALERIA DE MÍDIAS E OFERTA VIP =============
     chat_id = chat_id_manual or context.job.chat_id
     logger.info(f"⏰ ETAPA 3: Enviando galeria de mídias para {chat_id}.")
-    await delete_message_if_exists(context, 'etapa2_msg_id')
+    await delete_message_if_exists(context, f'etapa2_msg_{chat_id}', chat_id)
     
     media_group = [InputMediaVideo(media=MEDIA_VIDEO_QUENTE), InputMediaPhoto(media=MEDIA_APRESENTACAO), InputMediaPhoto(media=MEDIA_PREVIA_SITE), InputMediaPhoto(media=MEDIA_PROVOCATIVA)]
     await context.bot.send_media_group(chat_id=chat_id, media=media_group)
@@ -273,7 +283,7 @@ async def job_etapa3_galeria(context: ContextTypes.DEFAULT_TYPE, chat_id_manual=
     text_vip = "Gostou do que viu, meu bem 🤭?\n\nTenho muito mais no VIP pra você (TOTALMENTE SEM CENSURA).\n\nVem gozar porra quentinha pra mim🥵💦⬇️"
     keyboard = [[InlineKeyboardButton("CONHECER O VIP🔥", callback_data='trigger_etapa4')]]
     msg = await context.bot.send_message(chat_id=chat_id, text=text_vip, reply_markup=InlineKeyboardMarkup(keyboard))
-    context.user_data['etapa3_msg_id'] = msg.message_id
+    message_cache[f'etapa3_msg_{chat_id}'] = msg.message_id
 
     if context.job_queue:
         context.job_queue.run_once(job_etapa4_planos_vip, CONFIGURACAO_BOT["DELAYS"]["ETAPA_4_PLANOS_VIP"], chat_id=chat_id, name=f"job_etapa4_{chat_id}")
@@ -289,7 +299,7 @@ async def callback_trigger_etapa4(update: Update, context: ContextTypes.DEFAULT_
     chat_id = query.message.chat_id
     logger.info(f"👤 ETAPA 4: Usuário {chat_id} clicou para conhecer o VIP.")
     await remove_job_if_exists(f"job_etapa4_{chat_id}", context)
-    await delete_message_if_exists(context, 'etapa3_msg_id')
+    await delete_message_if_exists(context, f'etapa3_msg_{chat_id}', chat_id)
     await job_etapa4_planos_vip(context, chat_id_manual=chat_id)
     #================= FECHAMENTO ======================
     
@@ -297,12 +307,12 @@ async def job_etapa4_planos_vip(context: ContextTypes.DEFAULT_TYPE, chat_id_manu
     #======== MOSTRA OS PLANOS VIP =============
     chat_id = chat_id_manual or context.job.chat_id
     logger.info(f"⏰ ETAPA 4: Enviando planos VIP para {chat_id}.")
-    await delete_message_if_exists(context, 'etapa3_msg_id')
+    await delete_message_if_exists(context, f'etapa3_msg_{chat_id}', chat_id)
 
     texto_planos = "No VIP você vai ver TUDO sem censura, vídeos completos de mim gozando, chamadas privadas e muito mais!\n\n<b>Escolhe o seu acesso especial:</b>"
     keyboard = [[InlineKeyboardButton(p["botao_texto"], callback_data=f"plano:{p['id']}")] for p in VIP_PLANS.values()]
     msg = await context.bot.send_message(chat_id=chat_id, text=texto_planos, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-    context.user_data['etapa4_msg_id'] = msg.message_id
+    message_cache[f'etapa4_msg_{chat_id}'] = msg.message_id
 
     if context.job_queue:
         context.job_queue.run_once(job_etapa5_remarketing, CONFIGURACAO_BOT["DELAYS"]["ETAPA_5_REMARKETING"], chat_id=chat_id, name=f"job_etapa5_{chat_id}")
@@ -315,7 +325,7 @@ async def job_etapa5_remarketing(context: ContextTypes.DEFAULT_TYPE):
     #======== ENVIA OFERTA DE REMARKETING =============
     chat_id = context.job.chat_id
     logger.info(f"⏰ ETAPA 5: Enviando remarketing para {chat_id}.")
-    await delete_message_if_exists(context, 'etapa4_msg_id')
+    await delete_message_if_exists(context, f'etapa4_msg_{chat_id}', chat_id)
     
     texto_remarketing = "Ei, meu bem... vi que você ficou na dúvida. 🤔\n\nPra te ajudar a decidir, liberei um <b>desconto especial SÓ PRA VOCÊ</b>. Mas corre que é por tempo limitado! 👇"
     plano_desc = list(REMARKETING_PLAN.values())[0]
@@ -331,7 +341,7 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
     user_id = query.from_user.id
     
     await remove_job_if_exists(f"job_etapa5_{chat_id}", context)
-    await delete_message_if_exists(context, 'etapa4_msg_id')
+    await delete_message_if_exists(context, f'etapa4_msg_{chat_id}', chat_id)
     
     plano_id = query.data.split(":")[1]
     plano = next((p for p in list(VIP_PLANS.values()) + list(REMARKETING_PLAN.values()) if p["id"] == plano_id), None)
