@@ -58,13 +58,18 @@ except Exception as e:
     db = None
 
 async def decode_tracking_data(encoded_param):
-    """Decodifica dados de tracking do Xtracky (ASYNC)"""
+    """Decodifica dados de tracking do Xtracky (ASYNC) com cache"""
     try:
+        # Verifica cache primeiro (evita chamadas HTTP repetidas)
+        if encoded_param in tracking_cache:
+            logger.info(f"📋 Cache hit para {encoded_param}")
+            return tracking_cache[encoded_param]
+        
         # Verifica se é um ID mapeado (começa com 'M')
         if encoded_param.startswith('M') and len(encoded_param) <= 12:
             logger.info(f"🔍 ID mapeado detectado: {encoded_param}")
             
-            # Tenta recuperar dados do API Gateway
+            # Tenta recuperar dados do API Gateway (APENAS UMA VEZ)
             try:
                 response = await http_client.get(f"{API_GATEWAY_URL}/api/tracking/get/{encoded_param}")
                 if response.status_code == 200:
@@ -72,6 +77,7 @@ async def decode_tracking_data(encoded_param):
                     if api_data.get('success') and api_data.get('original'):
                         original_data = json.loads(api_data['original'])
                         logger.info(f"✅ Dados recuperados do servidor: {original_data}")
+                        tracking_cache[encoded_param] = original_data  # Cache por 2h
                         return original_data
                     else:
                         logger.warning(f"⚠️ Dados não encontrados no servidor para ID: {encoded_param}")
@@ -81,7 +87,9 @@ async def decode_tracking_data(encoded_param):
                 logger.error(f"❌ Erro ao consultar API: {e}")
             
             # Fallback: usar ID como click_id
-            return {'click_id': encoded_param}
+            result = {'click_id': encoded_param}
+            tracking_cache[encoded_param] = result  # Cache mesmo o fallback
+            return result
         
         # Tenta decodificar Base64
         try:
@@ -234,35 +242,33 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"🔍 Parâmetro recebido: {encoded_param}")
         tracking_data = await decode_tracking_data(encoded_param)
     else:
-        # Busca último tracking disponível
-        try:
-            response = await http_client.get(f"{API_GATEWAY_URL}/api/tracking/latest")
-            if response.status_code == 200:
-                api_data = response.json()
-                if api_data.get('success') and api_data.get('original'):
-                    tracking_data = json.loads(api_data['original'])
-                    logger.info(f"📋 Tracking recente aplicado: {tracking_data}")
-        except Exception as e:
-            logger.error(f"❌ Erro buscando tracking: {e}")
+        # Sem parâmetros - usuário direto no bot (sem tracking)
+        tracking_data = {'utm_source': 'direct_bot', 'click_id': 'direct'}
+        logger.info(f"📋 Usuário acesso direto (sem tracking)")
     
-    # Salva dados do usuário via API (MANTÉM FUNCIONALIDADE EXISTENTE)
-    try:
-        user_data = {
-            'telegram_id': user_id,
-            'username': user_name,
-            'first_name': update.effective_user.first_name or user_name,
-            'last_name': update.effective_user.last_name or '',
-            'tracking_data': tracking_data
-        }
-        
-        logger.info(f"📤 Enviando dados do usuário para API: {user_data}")
-        response = await http_client.post(f"{API_GATEWAY_URL}/api/users", json=user_data)
-        if response.status_code == 200:
-            logger.info(f"✅ Usuário salvo no banco via API")
-        else:
-            logger.warning(f"⚠️ Erro salvando usuário: {response.status_code}")
-    except Exception as e:
-        logger.error(f"❌ Erro comunicação API: {e}")
+    # Salva dados do usuário via API (APENAS SE NÃO FOI SALVO RECENTEMENTE)
+    user_key = f"user_{user_id}"
+    if user_key not in usuarios_salvos:
+        try:
+            user_data = {
+                'telegram_id': user_id,
+                'username': user_name,
+                'first_name': update.effective_user.first_name or user_name,
+                'last_name': update.effective_user.last_name or '',
+                'tracking_data': tracking_data
+            }
+            
+            logger.info(f"📤 Salvando usuário no banco: {user_id}")
+            response = await http_client.post(f"{API_GATEWAY_URL}/api/users", json=user_data)
+            if response.status_code == 200:
+                logger.info(f"✅ Usuário salvo no banco via API")
+                usuarios_salvos[user_key] = True  # Cache por 1h
+            else:
+                logger.warning(f"⚠️ Erro salvando usuário: {response.status_code}")
+        except Exception as e:
+            logger.error(f"❌ Erro comunicação API: {e}")
+    else:
+        logger.info(f"📋 Usuário {user_id} já salvo recentemente (cache)")
 
     # NOVO: Verificação de membro do grupo
     try:
@@ -331,7 +337,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     
     # Inicia timer de 15s para enviar prévias automaticamente
-    asyncio.create_task(enviar_previews_automatico(context, update.effective_chat.id, user.id))
+    context.application.create_task(enviar_previews_automatico(context, update.effective_chat.id, user.id))
     logger.info(f"⏰ Timer de 15s iniciado para usuário {user.id}")
 
 async def pix_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -377,6 +383,10 @@ usuarios_viram_midias = TTLCache(maxsize=1000, ttl=3600)  # 1 hora
 usuarios_viram_previews = TTLCache(maxsize=1000, ttl=3600)  # 1 hora
 pix_cache = TTLCache(maxsize=500, ttl=1800)  # 30 minutos
 mensagens_pix = TTLCache(maxsize=500, ttl=3600)  # 1 hora
+
+# Cache para otimizar chamadas HTTP
+tracking_cache = TTLCache(maxsize=500, ttl=7200)  # 2 horas
+usuarios_salvos = TTLCache(maxsize=1000, ttl=3600)  # 1 hora
 
 async def enviar_previews_automatico(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int):
     """Envia prévias automaticamente após 15s se usuário não entrou no grupo"""
