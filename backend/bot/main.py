@@ -462,9 +462,10 @@ async def processar_pagamento_plano(update: Update, context: ContextTypes.DEFAUL
                 ]
                 reply_markup_botoes = InlineKeyboardMarkup(keyboard_botoes)
 
-                # Envia com QR Code como imagem se disponível, senão só texto
+                # Envia com QR Code como imagem se disponível
                 if qr_code:
                     try:
+                        logger.info(f"🎯 Tentando enviar QR Code: {qr_code}")
                         msg_enviada = await context.bot.send_photo(
                             chat_id=chat_id,
                             photo=qr_code,
@@ -484,13 +485,28 @@ async def processar_pagamento_plano(update: Update, context: ContextTypes.DEFAUL
                         )
                         logger.info(f"✅ PIX enviado como texto (fallback) para {user_id}")
                 else:
-                    msg_enviada = await context.bot.send_message(
-                        chat_id=chat_id,
-                        text=caption_completa,
-                        parse_mode='HTML',
-                        reply_markup=reply_markup_botoes
-                    )
-                    logger.info(f"✅ PIX enviado como texto para {user_id}")
+                    # Gera QR Code a partir do PIX copia e cola usando API externa
+                    try:
+                        qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={pix_copia_cola}"
+                        logger.info(f"🎯 Gerando QR Code externo: {qr_url}")
+                        msg_enviada = await context.bot.send_photo(
+                            chat_id=chat_id,
+                            photo=qr_url,
+                            caption=caption_completa,
+                            parse_mode='HTML',
+                            reply_markup=reply_markup_botoes
+                        )
+                        logger.info(f"✅ PIX enviado com QR Code gerado externamente para {user_id}")
+                    except Exception as qr_err:
+                        logger.warning(f"⚠️ Erro gerando QR Code externo: {qr_err}")
+                        # Fallback final para mensagem de texto
+                        msg_enviada = await context.bot.send_message(
+                            chat_id=chat_id,
+                            text=caption_completa,
+                            parse_mode='HTML',
+                            reply_markup=reply_markup_botoes
+                        )
+                        logger.info(f"✅ PIX enviado como texto (fallback final) para {user_id}")
                 
                 # Armazena o ID da mensagem para controle
                 if user_id not in mensagens_pix: 

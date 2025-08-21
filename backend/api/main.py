@@ -332,10 +332,25 @@ def gerar_pix():
                 transaction_id = tribopay_data.get('hash', str(int(datetime.now().timestamp())))
                 pix_data = tribopay_data.get('pix', {})
                 pix_code = pix_data.get('pix_qr_code', '')
-                qr_code = pix_data.get('qr_code', '')
+                
+                # Verifica múltiplas possibilidades de QR Code na resposta TriboPay
+                qr_code = (
+                    pix_data.get('qr_code') or 
+                    pix_data.get('qr_code_url') or 
+                    pix_data.get('qr_code_image') or
+                    tribopay_data.get('qr_code') or
+                    tribopay_data.get('qr_code_url') or
+                    tribopay_data.get('qr_code_image') or
+                    pix_data.get('qrcode') or
+                    tribopay_data.get('qrcode') or
+                    None
+                )
                 
                 logger.info(f"✅ PIX TriboPay REAL gerado: {transaction_id}")
                 logger.info(f"💳 PIX Code: {pix_code[:50]}..." if pix_code else "Sem PIX code")
+                logger.info(f"🎯 QR Code: {qr_code}" if qr_code else "❌ Sem QR Code")
+                logger.info(f"📋 PIX Data completo: {pix_data}")
+                logger.info(f"📋 TriboPay Response completo: {tribopay_data}")
             else:
                 logger.error(f"❌ Erro TriboPay: {response.status_code} - {response.text}")
                 # FALLBACK: Gera PIX local se TriboPay falhar
