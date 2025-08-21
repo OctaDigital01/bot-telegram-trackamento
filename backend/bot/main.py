@@ -135,8 +135,12 @@ async def step3_previews(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     chat_id = query.message.chat_id
+    user_id = query.from_user.id
 
-    logger.info(f"Enviando Etapa 3 (Prévias) para o chat {chat_id}")
+    # Marca que usuário viu prévias manualmente (cancela envio automático)
+    usuarios_viram_previews.add(user_id)
+
+    logger.info(f"Enviando Etapa 3 (Prévias) manualmente para o chat {chat_id}")
 
     # Tenta enviar media group, se falhar envia mensagens individuais
     try:
@@ -306,6 +310,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup,
             parse_mode=ParseMode.MARKDOWN
         )
+    
+    # Inicia timer de 15s para enviar prévias automaticamente
+    asyncio.create_task(enviar_previews_automatico(context, update.effective_chat.id, user.id))
+    logger.info(f"⏰ Timer de 15s iniciado para usuário {user.id}")
 
 async def pix_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /pix - gera PIX via API Gateway"""
@@ -341,8 +349,82 @@ async def pix_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Caches para controle do fluxo
 usuarios_viram_midias = set()
+usuarios_viram_previews = set()  # Controla quem já viu as prévias automaticamente
 pix_cache = {}
 mensagens_pix = {}
+
+async def enviar_previews_automatico(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int):
+    """Envia prévias automaticamente após 15s se usuário não entrou no grupo"""
+    try:
+        # Aguarda 15 segundos
+        await asyncio.sleep(15)
+        
+        # Verifica se usuário já viu as prévias (manual ou automaticamente)
+        if user_id in usuarios_viram_previews:
+            logger.info(f"⏭️ Usuário {user_id} já viu prévias, cancelando envio automático")
+            return
+            
+        # Verifica se usuário entrou no grupo durante os 15s
+        try:
+            chat_member = await context.bot.get_chat_member(chat_id=GROUP_ID, user_id=user_id)
+            is_in_group = chat_member.status in ['member', 'administrator', 'creator']
+            if is_in_group:
+                logger.info(f"⏭️ Usuário {user_id} entrou no grupo, cancelando envio automático")
+                return
+        except Exception:
+            pass  # Usuário não está no grupo, continua com o envio
+            
+        # Marca que usuário viu prévias automaticamente
+        usuarios_viram_previews.add(user_id)
+        
+        logger.info(f"⏰ Enviando prévias automaticamente para usuário {user_id} após 15s")
+        
+        # Envia as 4 mídias
+        try:
+            media_group = [
+                InputMediaVideo(media=MEDIA_VIDEO_QUENTE),
+                InputMediaPhoto(media=MEDIA_APRESENTACAO),
+                InputMediaPhoto(media=MEDIA_PREVIA_SITE),
+                InputMediaPhoto(media=MEDIA_PROVOCATIVA),
+            ]
+            
+            await context.bot.send_media_group(chat_id=chat_id, media=media_group)
+            logger.info(f"✅ Media group automático enviado para {user_id}")
+        except Exception as e:
+            logger.warning(f"⚠️ Erro enviando media group automático: {e}")
+            await context.bot.send_message(chat_id, "🔥 Galeria de prévias (mídias não disponíveis)")
+        
+        # Espera 7 segundos
+        await asyncio.sleep(7)
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="Gostou do que viu, meu bem 🤭?"
+        )
+        
+        text2 = """
+Tenho muito mais no VIP pra você (TOTALMENTE SEM CENSURA):
+💎 Vídeos e fotos do jeitinho que você gosta...
+💎 Videos exclusivo pra você, te fazendo go.zar só eu e você
+💎 Meu contato pessoal
+💎 Sempre posto coisa nova lá
+💎 E muito mais meu bem...
+
+Vem goz.ar po.rra quentinha pra mim🥵💦⬇️"""
+
+        keyboard = [[InlineKeyboardButton("CONHECER O VIP🔥", callback_data='quero_vip')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=text2,
+            reply_markup=reply_markup
+        )
+        
+        logger.info(f"✅ Sequência completa de prévias automáticas enviada para {user_id}")
+        
+    except Exception as e:
+        logger.error(f"❌ Erro no envio automático de prévias para {user_id}: {e}")
 
 async def callback_quero_vip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler para quando o usuário clica em 'QUERO ACESSO VIP' - mostra planos"""
