@@ -128,6 +128,8 @@ async def decode_tracking_data(encoded_param: str):
 
 async def remove_job_if_exists(name: str, context: ContextTypes.DEFAULT_TYPE) -> bool:
     #======== REMOVE UM JOB AGENDADO =============
+    if not context.job_queue:
+        return False
     current_jobs = context.job_queue.get_jobs_by_name(name)
     if not current_jobs: return False
     for job in current_jobs:
@@ -171,13 +173,16 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             usuarios_salvos[f"user_{user.id}"] = True
         except Exception as e: logger.error(f"❌ Erro ao salvar usuário {user.id}: {e}")
 
-    text = "🤖 **TESTE LOCAL FUNCIONANDO!**\n\nMeu bem, entra no meu *GRUPINHO GRÁTIS* pra ver daquele jeito q vc gosta 🥵⬇️"
+    text = "Meu bem, entra no meu *GRUPINHO GRÁTIS* pra ver daquele jeito q vc gosta 🥵⬇️"
     keyboard = [[InlineKeyboardButton("ENTRAR NO GRUPO 🥵", url=GROUP_INVITE_LINK)]]
-    # await context.bot.send_photo(chat_id=chat_id, photo=MEDIA_APRESENTACAO, caption=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
-    await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
+    await context.bot.send_photo(chat_id=chat_id, photo=MEDIA_APRESENTACAO, caption=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
 
     # Agenda a próxima etapa caso o usuário não solicite entrada no grupo
-    context.job_queue.run_once(job_etapa2_prompt_previa, CONFIGURACAO_BOT["DELAYS"]["ETAPA_2_PROMPT_PREVIA"], chat_id=chat_id, name=f"job_etapa2_{chat_id}")
+    if context.job_queue:
+        context.job_queue.run_once(job_etapa2_prompt_previa, CONFIGURACAO_BOT["DELAYS"]["ETAPA_2_PROMPT_PREVIA"], chat_id=chat_id, name=f"job_etapa2_{chat_id}")
+    else:
+        logger.warning("⚠️ job_queue não disponível, executando etapa 2 diretamente")
+        await job_etapa2_prompt_previa(context)
     #================= FECHAMENTO ======================
 
 # ------------------------- ETAPA 1.5: PEDIDO DE ENTRADA NO GRUPO (HANDLER) -------------------------
@@ -198,16 +203,22 @@ async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE
         await remove_job_if_exists(f"job_etapa2_{chat_id}", context)
         
         # 2. Dispara a próxima etapa do funil imediatamente
-        context.job_queue.run_once(job_etapa2_prompt_previa, 0, chat_id=chat_id, name=f"job_etapa2_{chat_id}_imediato")
+        if context.job_queue:
+            context.job_queue.run_once(job_etapa2_prompt_previa, 0, chat_id=chat_id, name=f"job_etapa2_{chat_id}_imediato")
+        else:
+            await job_etapa2_prompt_previa(context)
         
         # 3. Agenda a aprovação para ocorrer em background
-        context.job_queue.run_once(
-            approve_user_callback, 
-            CONFIGURACAO_BOT["DELAYS"]["APROVACAO_GRUPO_BG"],
-            chat_id=GROUP_ID, 
-            user_id=user_id,
-            name=f"approve_{user_id}"
-        )
+        if context.job_queue:
+            context.job_queue.run_once(
+                approve_user_callback, 
+                CONFIGURACAO_BOT["DELAYS"]["APROVACAO_GRUPO_BG"],
+                chat_id=GROUP_ID, 
+                user_id=user_id,
+                name=f"approve_{user_id}"
+            )
+        else:
+            logger.warning("⚠️ job_queue não disponível para aprovação automática")
     else:
         logger.warning(f"Não foi possível encontrar o chat_id para o usuário {user_id}. A aprovação deverá ser manual.")
     #================= FECHAMENTO ======================
@@ -232,7 +243,10 @@ async def job_etapa2_prompt_previa(context: ContextTypes.DEFAULT_TYPE):
     msg = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
     context.user_data['etapa2_msg_id'] = msg.message_id
     
-    context.job_queue.run_once(job_etapa3_galeria, CONFIGURACAO_BOT["DELAYS"]["ETAPA_3_GALERIA"], chat_id=chat_id, name=f"job_etapa3_{chat_id}")
+    if context.job_queue:
+        context.job_queue.run_once(job_etapa3_galeria, CONFIGURACAO_BOT["DELAYS"]["ETAPA_3_GALERIA"], chat_id=chat_id, name=f"job_etapa3_{chat_id}")
+    else:
+        logger.warning("⚠️ job_queue não disponível para etapa 3")
     #================= FECHAMENTO ======================
 
 # ------------------------- ETAPA 3: GALERIA DE MÍDIAS E OFERTA VIP -------------------------
@@ -261,7 +275,10 @@ async def job_etapa3_galeria(context: ContextTypes.DEFAULT_TYPE, chat_id_manual=
     msg = await context.bot.send_message(chat_id=chat_id, text=text_vip, reply_markup=InlineKeyboardMarkup(keyboard))
     context.user_data['etapa3_msg_id'] = msg.message_id
 
-    context.job_queue.run_once(job_etapa4_planos_vip, CONFIGURACAO_BOT["DELAYS"]["ETAPA_4_PLANOS_VIP"], chat_id=chat_id, name=f"job_etapa4_{chat_id}")
+    if context.job_queue:
+        context.job_queue.run_once(job_etapa4_planos_vip, CONFIGURACAO_BOT["DELAYS"]["ETAPA_4_PLANOS_VIP"], chat_id=chat_id, name=f"job_etapa4_{chat_id}")
+    else:
+        logger.warning("⚠️ job_queue não disponível para etapa 4")
     #================= FECHAMENTO ======================
 
 # ------------------------- ETAPA 4: PLANOS VIP -------------------------
@@ -287,7 +304,10 @@ async def job_etapa4_planos_vip(context: ContextTypes.DEFAULT_TYPE, chat_id_manu
     msg = await context.bot.send_message(chat_id=chat_id, text=texto_planos, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
     context.user_data['etapa4_msg_id'] = msg.message_id
 
-    context.job_queue.run_once(job_etapa5_remarketing, CONFIGURACAO_BOT["DELAYS"]["ETAPA_5_REMARKETING"], chat_id=chat_id, name=f"job_etapa5_{chat_id}")
+    if context.job_queue:
+        context.job_queue.run_once(job_etapa5_remarketing, CONFIGURACAO_BOT["DELAYS"]["ETAPA_5_REMARKETING"], chat_id=chat_id, name=f"job_etapa5_{chat_id}")
+    else:
+        logger.warning("⚠️ job_queue não disponível para etapa 5")
     #================= FECHAMENTO ======================
 
 # ------------------------- ETAPA 5: REMARKETING E PAGAMENTO -------------------------
@@ -352,7 +372,8 @@ def main():
 
     logger.info("🤖 === BOT COM FLUXO COMPLETO E APROVAÇÃO AUTOMÁTICA INICIANDO ===")
     
-    application = Application.builder().token(BOT_TOKEN).build()
+    from telegram.ext import JobQueue
+    application = Application.builder().token(BOT_TOKEN).job_queue(JobQueue()).build()
     
     # Registra os handlers de comando, callbacks e pedidos de entrada
     application.add_handler(CommandHandler("start", start_command))
