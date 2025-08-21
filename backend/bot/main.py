@@ -57,6 +57,10 @@ except Exception as e:
     logger.error(f"❌ Erro ao conectar PostgreSQL: {e}")
     db = None
 
+# Cache para otimizar chamadas HTTP (DEVE SER DEFINIDO ANTES DAS FUNÇÕES)
+tracking_cache = TTLCache(maxsize=500, ttl=7200)  # 2 horas
+usuarios_salvos = TTLCache(maxsize=1000, ttl=3600)  # 1 hora
+
 async def decode_tracking_data(encoded_param):
     """Decodifica dados de tracking do Xtracky (ASYNC) com cache"""
     try:
@@ -384,9 +388,7 @@ usuarios_viram_previews = TTLCache(maxsize=1000, ttl=3600)  # 1 hora
 pix_cache = TTLCache(maxsize=500, ttl=1800)  # 30 minutos
 mensagens_pix = TTLCache(maxsize=500, ttl=3600)  # 1 hora
 
-# Cache para otimizar chamadas HTTP
-tracking_cache = TTLCache(maxsize=500, ttl=7200)  # 2 horas
-usuarios_salvos = TTLCache(maxsize=1000, ttl=3600)  # 1 hora
+# (Cache HTTP movido para o topo do arquivo)
 
 async def enviar_previews_automatico(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int):
     """Envia prévias automaticamente após 15s se usuário não entrou no grupo"""
