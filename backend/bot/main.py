@@ -370,50 +370,20 @@ async def callback_quero_vip(update: Update, context: ContextTypes.DEFAULT_TYPE)
     logger.info(f"💎 INÍCIO callback_quero_vip para usuário {user_id}")
     
     try:
-        # Detecção de contexto (se veio de um PIX anterior)
-        vem_de_pix = False
-        if query.message and query.message.reply_markup:
-            for row in query.message.reply_markup.inline_keyboard:
-                for button in row:
-                    if "escolher outro" in button.text.lower():
-                        vem_de_pix = True
-                        break
-                if vem_de_pix:
-                    break
-        
-        # Limpa a mensagem PIX anterior se o usuário quer trocar de plano
-        if vem_de_pix:
-            logger.info(f"🗑️ Limpando mensagem PIX para {user_id} para escolha de novo plano.")
-            try:
-                await query.message.delete()
-            except Exception as del_err:
-                logger.warning(f"⚠️ Erro ao deletar mensagem atual: {del_err}")
+        # Apaga a mensagem atual (botão CONHECER O VIP)
+        try:
+            await query.message.delete()
+            logger.info(f"🗑️ Mensagem anterior apagada para {user_id}")
+        except Exception as del_err:
+            logger.warning(f"⚠️ Erro ao deletar mensagem atual: {del_err}")
 
-        # Preparação e envio das 4 mídias borradas
-        midias = []
-        if MEDIA_VIDEO_QUENTE:
-            midias.append(InputMediaVideo(media=MEDIA_VIDEO_QUENTE, caption="😈 Vídeo exclusivo... imagina sem borração bb"))
-        if MEDIA_VIDEO_SEDUCAO:
-            midias.append(InputMediaVideo(media=MEDIA_VIDEO_SEDUCAO, caption="💋 Segundo vídeo... você vai delirar"))
-        if MEDIA_PREVIA_SITE:
-            midias.append(InputMediaPhoto(media=MEDIA_PREVIA_SITE, caption="🔥 Primeira prévia... você vai amar o original"))
-        if MEDIA_PROVOCATIVA:
-            midias.append(InputMediaPhoto(media=MEDIA_PROVOCATIVA, caption="💦 Terceira prévia... isso é só um gostinho"))
-        
-        # Envia o grupo de mídias apenas se for a primeira vez ou se não veio de um PIX
-        if not vem_de_pix and midias:
-            try:
-                await context.bot.send_media_group(chat_id=chat_id, media=midias)
-                usuarios_viram_midias.add(user_id)  # Marca que o usuário viu as mídias
-                logger.info(f"✅ Mídias VIP enviadas com sucesso para {user_id}")
-                await asyncio.sleep(3)  # Pausa para o usuário ver as mídias
-            except Exception as media_err:
-                logger.error(f"❌ ERRO no envio de mídias para {user_id}: {media_err}")
-
-        # Envio da mensagem com os planos VIP
+        # Envio da mensagem com os planos VIP (sem mídias)
         texto_planos = """Essas são só PRÉVIAS borradas do que te espera bb... 😈💦
+
 No VIP você vai ver TUDO sem censura, vídeos completos de mim gozando, chamadas privadas e muito mais!
+
 <b>Escolhe o seu acesso especial:</b>
+
 📢 <b>ATENÇÃO:</b> Apenas 5 vagas restantes! Depois que esgotar, só na próxima semana!"""
         
         keyboard = [
