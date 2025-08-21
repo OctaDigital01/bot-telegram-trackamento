@@ -40,9 +40,9 @@ GROUP_ID = os.getenv('GROUP_ID', '-1002342384678')  # Placeholder - configurar n
 GROUP_INVITE_LINK = os.getenv('GROUP_INVITE_LINK', 'https://t.me/+exemplo')  # Placeholder
 GROUP_NAME = os.getenv('GROUP_NAME', 'Grupo VIP')  # Nome do grupo
 
-# Delays estratégicos (em segundos) - facilmente editáveis
-DELAY_BEFORE_APPROVAL = int(os.getenv('DELAY_BEFORE_APPROVAL', '30'))  # Delay antes de aprovar entrada
-DELAY_BETWEEN_PREVIEWS = int(os.getenv('DELAY_BETWEEN_PREVIEWS', '7'))  # Delay entre envio de prévias
+# Delays estratégicos (em segundos) - configurados no código
+DELAY_BEFORE_APPROVAL = 30  # Delay antes de aprovar entrada no grupo
+DELAY_BETWEEN_PREVIEWS = 7   # Delay entre envio de prévias na galeria
 
 # File IDs das mídias (placeholders - serão configurados depois)
 PREVIEW_MEDIA = {
