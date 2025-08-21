@@ -299,20 +299,20 @@ def gerar_pix():
                 "transaction_origin": "api",
                 "installments": 1,  # OBRIGATÓRIO para PIX
                 "postback_url": "https://api-gateway-production-22bb.up.railway.app/webhook/tribopay",
-                # TRACKING UTM - Parâmetros importantes para TriboPay
-                "utm_source": user_data.get('utm_source') if user_data else None,
-                "utm_campaign": user_data.get('utm_campaign') if user_data else None,
-                "utm_medium": user_data.get('utm_medium') if user_data else None,
-                "utm_term": user_data.get('utm_term') if user_data else None,
-                "utm_content": user_data.get('utm_content') if user_data else None,
-                "src": user_data.get('click_id') if user_data else None  # Click ID como 'src'
+                # TRACKING UTM - Formato correto para TriboPay (baseado no webhook)
+                "tracking": {
+                    "src": user_data.get('click_id') if user_data else None,
+                    "utm_source": user_data.get('utm_source') if user_data else None,
+                    "utm_campaign": user_data.get('utm_campaign') if user_data else None,
+                    "utm_medium": user_data.get('utm_medium') if user_data else None,
+                    "utm_term": user_data.get('utm_term') if user_data else None,
+                    "utm_content": user_data.get('utm_content') if user_data else None
+                }
             }
             
-            logger.info(f"🎯 Tracking UTM adicionado ao payload:")
-            logger.info(f"   utm_source: {user_data.get('utm_source') if user_data else None}")
-            logger.info(f"   utm_campaign: {user_data.get('utm_campaign') if user_data else None}")
-            logger.info(f"   utm_medium: {user_data.get('utm_medium') if user_data else None}")
-            logger.info(f"   src (click_id): {user_data.get('click_id') if user_data else None}")
+            tracking_payload = tribopay_payload.get('tracking', {})
+            logger.info(f"🎯 Objeto tracking enviado para TriboPay: {tracking_payload}")
+            logger.info(f"🚀 Payload completo TriboPay (tracking): {json.dumps(tracking_payload, indent=2)}")
             
             logger.info(f"🚀 Criando transação PIX na TriboPay")
             
