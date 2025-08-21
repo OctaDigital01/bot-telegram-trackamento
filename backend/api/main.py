@@ -63,7 +63,13 @@ def save_user():
     """Salva dados do usuário"""
     try:
         data = request.get_json()
+        logger.info(f"📥 Dados recebidos no API: {data}")
+        
         telegram_id = int(data.get('telegram_id') or data.get('user_id'))
+        tracking_data = data.get('tracking_data', {})
+        
+        logger.info(f"🔍 tracking_data recebido: {tracking_data}")
+        logger.info(f"🔍 Tipo de tracking_data: {type(tracking_data)}")
         
         if db:
             db.save_user(
@@ -71,7 +77,7 @@ def save_user():
                 username=data.get('username'),
                 first_name=data.get('first_name') or data.get('name'),
                 last_name=data.get('last_name'),
-                tracking_data=data.get('tracking_data', {})
+                tracking_data=tracking_data
             )
             logger.info(f"✅ Usuário {telegram_id} salvo no PostgreSQL")
             return jsonify({'success': True, 'user_id': str(telegram_id)})

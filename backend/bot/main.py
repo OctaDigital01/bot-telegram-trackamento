@@ -145,6 +145,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'last_name': update.effective_user.last_name or '',
             'tracking_data': tracking_data
         }
+        
+        logger.info(f"📤 Enviando dados do usuário para API: {user_data}")
         response = requests.post(f"{API_GATEWAY_URL}/api/users", json=user_data, timeout=5)
         if response.status_code == 200:
             logger.info(f"✅ Usuário salvo no banco via API")
