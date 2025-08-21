@@ -11,7 +11,6 @@ import json
 import base64
 import httpx
 from datetime import datetime
-from cachetools import TTLCache
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaVideo, ChatJoinRequest
 from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler, ChatJoinRequestHandler
 from telegram.constants import ParseMode
@@ -56,30 +55,17 @@ except Exception as e:
     logger.error(f"❌ Erro ao conectar PostgreSQL: {e}")
     db = None
 
-# Cache OTIMIZADO para reduzir requisições HTTP (TTL aumentado)
-tracking_cache = TTLCache(maxsize=1000, ttl=14400)  # 4 horas (vs 2h) - dados raramente mudam
-usuarios_salvos = TTLCache(maxsize=2000, ttl=7200)  # 2 horas (vs 1h) - usuários persistem
-verification_cache = TTLCache(maxsize=1000, ttl=1800)  # 30 min - cache verificação grupo
-
-# Caches para controle de fluxo do bot OTIMIZADOS
-usuarios_viram_midias = TTLCache(maxsize=1500, ttl=5400)  # 1.5 horas (vs 1h)
-usuarios_viram_previews = TTLCache(maxsize=1500, ttl=5400)  # 1.5 horas (vs 1h)
-pix_cache = TTLCache(maxsize=1000, ttl=3600)  # 1 hora (vs 30 min) - PIX válido por mais tempo
-mensagens_pix = TTLCache(maxsize=1000, ttl=7200)  # 2 horas (vs 1h)
+# Controle simplificado sem cache
+mensagens_pix = {}  # Dict simples para IDs de mensagens PIX
 
 async def decode_tracking_data(encoded_param):
-    """Decodifica dados de tracking do Xtracky (ASYNC) com cache"""
+    """Decodifica dados de tracking do Xtracky (ASYNC) sem cache"""
     try:
-        # Verifica cache primeiro (evita chamadas HTTP repetidas)
-        if encoded_param in tracking_cache:
-            logger.info(f"📋 Cache hit para {encoded_param}")
-            return tracking_cache[encoded_param]
-        
         # Verifica se é um ID mapeado (começa com 'M')
         if encoded_param.startswith('M') and len(encoded_param) <= 12:
             logger.info(f"🔍 ID mapeado detectado: {encoded_param}")
             
-            # Tenta recuperar dados do API Gateway (APENAS UMA VEZ)
+            # Tenta recuperar dados do API Gateway
             try:
                 response = await http_client.get(f"{API_GATEWAY_URL}/api/tracking/get/{encoded_param}")
                 if response.status_code == 200:
@@ -87,7 +73,6 @@ async def decode_tracking_data(encoded_param):
                     if api_data.get('success') and api_data.get('original'):
                         original_data = json.loads(api_data['original'])
                         logger.info(f"✅ Dados recuperados do servidor: {original_data}")
-                        tracking_cache[encoded_param] = original_data  # Cache por 2h
                         return original_data
                     else:
                         logger.warning(f"⚠️ Dados não encontrados no servidor para ID: {encoded_param}")
@@ -98,7 +83,6 @@ async def decode_tracking_data(encoded_param):
             
             # Fallback: usar ID como click_id
             result = {'click_id': encoded_param}
-            tracking_cache[encoded_param] = result  # Cache mesmo o fallback
             return result
         
         # Tenta decodificar Base64
@@ -168,12 +152,8 @@ async def step3_previews(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = query.message.chat_id
     user_id = query.from_user.id
 
-    # Marca que usuário viu prévias manualmente (cancela envio automático)
-    try:
-        usuarios_viram_previews[user_id] = True
-        logger.info(f"✅ Usuário {user_id} marcado como viu prévias")
-    except Exception as e:
-        logger.error(f"❌ Erro marcando usuário previews: {e}")
+    # Usuário solicitou prévias manualmente
+    logger.info(f"✅ Usuário {user_id} solicitou prévias manualmente")
 
     logger.info(f"⚡ Iniciando prévias para {user_id}")
 
@@ -287,45 +267,33 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tracking_data = {'utm_source': 'direct_bot', 'click_id': 'direct'}
         logger.info(f"📋 Usuário acesso direto (sem tracking)")
     
-    # Salva dados do usuário via API (APENAS SE NÃO FOI SALVO RECENTEMENTE)
-    user_key = f"user_{user_id}"
-    if user_key not in usuarios_salvos:
-        try:
-            user_data = {
-                'telegram_id': user_id,
-                'username': user_name,
-                'first_name': update.effective_user.first_name or user_name,
-                'last_name': update.effective_user.last_name or '',
-                'tracking_data': tracking_data
-            }
-            
-            logger.info(f"📤 Salvando usuário no banco: {user_id}")
-            response = await http_client.post(f"{API_GATEWAY_URL}/api/users", json=user_data)
-            if response.status_code == 200:
-                logger.info(f"✅ Usuário salvo no banco via API")
-                usuarios_salvos[user_key] = True  # Cache por 1h
-            else:
-                logger.warning(f"⚠️ Erro salvando usuário: {response.status_code}")
-        except Exception as e:
-            logger.error(f"❌ Erro comunicação API: {e}")
-    else:
-        logger.info(f"📋 Usuário {user_id} já salvo recentemente (cache)")
+    # Salva dados do usuário via API
+    try:
+        user_data = {
+            'telegram_id': user_id,
+            'username': user_name,
+            'first_name': update.effective_user.first_name or user_name,
+            'last_name': update.effective_user.last_name or '',
+            'tracking_data': tracking_data
+        }
+        
+        logger.info(f"📤 Salvando usuário no banco: {user_id}")
+        response = await http_client.post(f"{API_GATEWAY_URL}/api/users", json=user_data)
+        if response.status_code == 200:
+            logger.info(f"✅ Usuário salvo no banco via API")
+        else:
+            logger.warning(f"⚠️ Erro salvando usuário: {response.status_code}")
+    except Exception as e:
+        logger.error(f"❌ Erro comunicação API: {e}")
 
-    # OTIMIZAÇÃO: Verificação de membro do grupo COM CACHE (reduz API calls)
-    verification_key = f"group_check_{user.id}"
-    if verification_key in verification_cache:
-        is_in_group = verification_cache[verification_key]
-        logger.info(f"📋 Cache hit verificação grupo para {user.id}: {is_in_group}")
-    else:
-        try:
-            chat_member = await context.bot.get_chat_member(chat_id=GROUP_ID, user_id=user.id)
-            is_in_group = chat_member.status in ['member', 'administrator', 'creator']
-            verification_cache[verification_key] = is_in_group  # Cache por 30 min
-            logger.info(f"🔍 Verificação grupo API para {user.id}: {is_in_group}")
-        except Exception as e:
-            logger.warning(f"Não foi possível verificar o status do usuário {user.id} no grupo {GROUP_ID}: {e}")
-            is_in_group = False
-            verification_cache[verification_key] = False  # Cache resultado negativo também
+    # Verificação de membro do grupo
+    try:
+        chat_member = await context.bot.get_chat_member(chat_id=GROUP_ID, user_id=user.id)
+        is_in_group = chat_member.status in ['member', 'administrator', 'creator']
+        logger.info(f"🔍 Verificação grupo API para {user.id}: {is_in_group}")
+    except Exception as e:
+        logger.warning(f"Não foi possível verificar o status do usuário {user.id} no grupo {GROUP_ID}: {e}")
+        is_in_group = False
 
     # Usuário já está no grupo - envia prévias direto
     if is_in_group:
@@ -444,92 +412,35 @@ http_client = httpx.AsyncClient(
     http2=False  # Desabilita HTTP/2 para reduzir overhead
 )
 
-# (Caches movidos para o topo do arquivo antes das funções)
 
 async def enviar_previews_automatico(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int):
-    """Envia prévias automaticamente após 15s se usuário não entrou no grupo"""
+    """Envia mensagem com botão após 15s se usuário não entrou no grupo"""
     try:
         logger.info(f"⏰ TIMER INICIADO: Aguardando 15s para usuário {user_id}")
         # Aguarda 15 segundos
         await asyncio.sleep(15)
         logger.info(f"⏰ TIMER FINALIZADO: 15s passaram para usuário {user_id}")
         
-        # Verifica se usuário já viu as prévias (manual ou automaticamente)
-        if user_id in usuarios_viram_previews:
-            logger.info(f"⏭️ Usuário {user_id} já viu prévias, cancelando envio automático")
-            return
-            
-        # SIMPLIFICADO: Remove verificação de grupo para garantir que timer funcione
-        # Se usuário não clicou no botão manual, envia automaticamente
-        logger.info(f"🔍 Usuário {user_id} não clicou no botão em 15s, enviando prévias automaticamente")
-            
-        # Marca que usuário viu prévias automaticamente
-        usuarios_viram_previews[user_id] = True
+        # Se usuário não clicou no botão manual em 15s, envia mensagem com botão
+        logger.info(f"🔍 Usuário {user_id} não clicou no botão em 15s, enviando mensagem com botão")
         
-        logger.info(f"⏰ Enviando prévias automaticamente para usuário {user_id} após 15s")
+        logger.info(f"⏰ Enviando mensagem com botão automaticamente para usuário {user_id} após 15s")
         
-        # Envia as 4 mídias (COM VALIDAÇÃO E FALLBACK)
-        try:
-            # Verifica se todas as mídias estão disponíveis
-            if not all([MEDIA_VIDEO_QUENTE, MEDIA_APRESENTACAO, MEDIA_PREVIA_SITE, MEDIA_PROVOCATIVA]):
-                raise ValueError("Uma ou mais mídias não estão configuradas")
-                
-            media_group = [
-                InputMediaVideo(media=MEDIA_VIDEO_QUENTE),
-                InputMediaPhoto(media=MEDIA_APRESENTACAO),
-                InputMediaPhoto(media=MEDIA_PREVIA_SITE),
-                InputMediaPhoto(media=MEDIA_PROVOCATIVA),
-            ]
-            
-            # TIMEOUT DE 10 SEGUNDOS para evitar travamento
-            await asyncio.wait_for(
-                context.bot.send_media_group(chat_id=chat_id, media=media_group),
-                timeout=10.0
-            )
-            logger.info(f"✅ Media group automático enviado para {user_id}")
-        except asyncio.TimeoutError:
-            logger.warning(f"⚠️ Timeout enviando media group automático para {user_id}")
-            await context.bot.send_message(chat_id, "🔥 Galeria de prévias (carregamento lento, conteúdo chegando...)")
-        except Exception as e:
-            logger.warning(f"⚠️ Erro enviando media group automático: {e}")
-            # FALLBACK: Envia mensagem alternativa SEM TRAVAR
-            try:
-                await context.bot.send_message(chat_id, "🔥 Suas prévias exclusivas estão chegando... (problema temporário com galeria)")
-            except Exception as fallback_error:
-                logger.error(f"❌ Fallback também falhou para {user_id}: {fallback_error}")
-                # NÃO TRAVA - continua o fluxo
-        
-        # Espera 7 segundos
-        await asyncio.sleep(7)
-
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text="Gostou do que viu, meu bem 🤭?"
-        )
-        
-        text2 = """
-Tenho muito mais no VIP pra você (TOTALMENTE SEM CENSURA):
-💎 Vídeos e fotos do jeitinho que você gosta...
-💎 Videos exclusivo pra você, te fazendo go.zar só eu e você
-💎 Meu contato pessoal
-💎 Sempre posto coisa nova lá
-💎 E muito mais meu bem...
-
-Vem goz.ar po.rra quentinha pra mim🥵💦⬇️"""
-
-        keyboard = [[InlineKeyboardButton("CONHECER O VIP🔥", callback_data='quero_vip')]]
+        # Envia mensagem da Etapa 2 (mesmo texto e botão das boas-vindas)
+        text = "Meu bem, já vou te aceitar no meu grupinho, ta bom?\n\nMas neem precisa esperar, clica aqui no botão pra ver um pedacinho do que te espera... 🔥(É DE GRAÇA!!!)⬇️"
+        keyboard = [[InlineKeyboardButton("VER CONTEÚDINHO DE GRAÇA 🔥🥵", callback_data='step3_previews')]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         await context.bot.send_message(
             chat_id=chat_id,
-            text=text2,
+            text=text,
             reply_markup=reply_markup
         )
         
-        logger.info(f"✅ Sequência completa de prévias automáticas enviada para {user_id}")
+        logger.info(f"✅ Mensagem com botão enviada automaticamente para {user_id}")
         
     except Exception as e:
-        logger.error(f"❌ Erro no envio automático de prévias para {user_id}: {e}")
+        logger.error(f"❌ Erro no envio automático da mensagem para {user_id}: {e}")
 
 async def callback_quero_vip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler para quando o usuário clica em 'QUERO ACESSO VIP' - mostra planos"""
