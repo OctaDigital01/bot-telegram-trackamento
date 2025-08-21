@@ -270,6 +270,7 @@ def gerar_pix():
             # Agora criar a transação PIX com o formato CORRETO
             valor_centavos = int(valor * 100)
             
+            # Adicionar parâmetros de tracking UTM ao payload
             tribopay_payload = {
                 "amount": valor_centavos,
                 "offer_hash": product_hash,  # OBRIGATÓRIO - hash do produto criado
@@ -293,8 +294,21 @@ def gerar_pix():
                 "expire_in_days": 1,  # Mínimo da API
                 "transaction_origin": "api",
                 "installments": 1,  # OBRIGATÓRIO para PIX
-                "postback_url": "https://api-gateway-production-22bb.up.railway.app/webhook/tribopay"
+                "postback_url": "https://api-gateway-production-22bb.up.railway.app/webhook/tribopay",
+                # TRACKING UTM - Parâmetros importantes para TriboPay
+                "utm_source": user_data.get('utm_source') if user_data else None,
+                "utm_campaign": user_data.get('utm_campaign') if user_data else None,
+                "utm_medium": user_data.get('utm_medium') if user_data else None,
+                "utm_term": user_data.get('utm_term') if user_data else None,
+                "utm_content": user_data.get('utm_content') if user_data else None,
+                "src": user_data.get('click_id') if user_data else None  # Click ID como 'src'
             }
+            
+            logger.info(f"🎯 Tracking UTM adicionado ao payload:")
+            logger.info(f"   utm_source: {user_data.get('utm_source') if user_data else None}")
+            logger.info(f"   utm_campaign: {user_data.get('utm_campaign') if user_data else None}")
+            logger.info(f"   utm_medium: {user_data.get('utm_medium') if user_data else None}")
+            logger.info(f"   src (click_id): {user_data.get('click_id') if user_data else None}")
             
             logger.info(f"🚀 Criando transação PIX na TriboPay")
             
@@ -376,10 +390,20 @@ def tribopay_webhook():
         webhook_data = request.get_json()
         logger.info(f"📥 Webhook TriboPay REAL: {webhook_data}")
         
-        # Processa webhook TriboPay real
-        transaction_id = webhook_data.get('id') or webhook_data.get('transaction_id')
-        status = webhook_data.get('status')
-        event_type = webhook_data.get('event_type')
+        # Processa webhook TriboPay real (formato atualizado)
+        transaction_data = webhook_data.get('transaction', {})
+        transaction_id = transaction_data.get('id') or webhook_data.get('token')
+        status = webhook_data.get('status') or transaction_data.get('status')
+        event_type = webhook_data.get('event')
+        
+        # Extrair dados de tracking do webhook
+        tracking_webhook = webhook_data.get('tracking', {})
+        
+        logger.info(f"🎯 Tracking recebido no webhook:")
+        logger.info(f"   utm_source: {tracking_webhook.get('utm_source')}")
+        logger.info(f"   utm_campaign: {tracking_webhook.get('utm_campaign')}")
+        logger.info(f"   utm_medium: {tracking_webhook.get('utm_medium')}")
+        logger.info(f"   src: {tracking_webhook.get('src')}")
         
         # Validação do webhook TriboPay
         if not transaction_id:
@@ -396,13 +420,14 @@ def tribopay_webhook():
                 
                 if status in ['paid', 'completed', 'approved']:
                     # Conversão confirmada - Envia para Xtracky
+                    # Usa dados do webhook TriboPay como prioridade, fallback para dados do banco
                     tracking_data = {
-                        'click_id': transaction.get('click_id'),
-                        'utm_source': transaction.get('utm_source'),
-                        'utm_medium': transaction.get('utm_medium'),
-                        'utm_campaign': transaction.get('utm_campaign'),
-                        'utm_term': transaction.get('utm_term'),
-                        'utm_content': transaction.get('utm_content')
+                        'click_id': tracking_webhook.get('src') or transaction.get('click_id'),
+                        'utm_source': tracking_webhook.get('utm_source') or transaction.get('utm_source'),
+                        'utm_medium': tracking_webhook.get('utm_medium') or transaction.get('utm_medium'),
+                        'utm_campaign': tracking_webhook.get('utm_campaign') or transaction.get('utm_campaign'),
+                        'utm_term': tracking_webhook.get('utm_term') or transaction.get('utm_term'),
+                        'utm_content': tracking_webhook.get('utm_content') or transaction.get('utm_content')
                     }
                     
                     logger.info(f"🎯 CONVERSÃO REAL CONFIRMADA: {tracking_data}")
