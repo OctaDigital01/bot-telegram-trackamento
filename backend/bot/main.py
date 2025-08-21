@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Bot Telegram - Serviço isolado
+Bot Telegram - Funil de Vendas com Tracking Completo
 Conecta com API Gateway e PostgreSQL
 """
 
@@ -11,8 +11,9 @@ import json
 import base64
 import requests
 from datetime import datetime
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaVideo, ChatJoinRequest
+from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler, ChatJoinRequestHandler
+from telegram.constants import ParseMode
 from database import get_db
 
 # Configuração de logging
@@ -26,6 +27,17 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '8422752874:AAFHBrpN2fXOPvQf0-k_786AooAQevUh4kY')
 API_GATEWAY_URL = os.getenv('API_GATEWAY_URL', 'https://api-gateway.railway.app')
 DATABASE_URL = os.getenv('DATABASE_URL')
+
+# Configurações do grupo
+GROUP_ID = int(os.getenv('GROUP_ID', '-1002342384678'))
+GROUP_INVITE_LINK = os.getenv('GROUP_INVITE_LINK', 'https://t.me/+iydDH1RTDPJlNTNh')
+
+# File IDs das mídias
+START_IMAGE_ID = os.getenv('START_IMAGE_ID', 'AgACAgEAAxkBAAIikminXIWOkl4Ru-3c7KFTNPmeUA6QAALsrjEbglU4RYKi9nkfTnf8AQADAgADeQADNgQ')
+PREVIEW_VIDEO_ID = os.getenv('PREVIEW_VIDEO_ID', 'BAACAgEAAxkBAAIilminXJOuWQ9uS_ZNt6seh7JKYoOHAAJtBgACglU4RRTfnPJAqPT3NgQ')
+PREVIEW_IMAGE_1_ID = os.getenv('PREVIEW_IMAGE_1_ID', 'AgACAgEAAxkBAAIimminXJm9zlFbOKnhm3NO2CwyYo8kAALtrjEbglU4RfgJ-nP8LfvFAQADAgADeQADNgQ')
+PREVIEW_IMAGE_2_ID = os.getenv('PREVIEW_IMAGE_2_ID', 'AgACAgEAAxkBAAIinminXKGMK_ue_HOK0Va36FJWO66vAALurjEbglU4RbhisJEkbnbqAQADAgADeQADNgQ')
+PREVIEW_IMAGE_3_ID = os.getenv('PREVIEW_IMAGE_3_ID', 'AgACAgEAAxkBAAIiominXKpBBmO4jkUUhssoYeHj57hUAALvrjEbglU4RYevSIpIW_DuAQADAgADeQADNgQ')
 
 # Database PostgreSQL
 try:
@@ -111,15 +123,76 @@ def process_xtracky_data(data_string):
         logger.error(f"❌ Erro processando Xtracky: {e}")
         return {'click_id': data_string}
 
+# ===== ETAPA 3: PRÉVIAS =====
+async def step3_previews(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Envia a galeria de prévias e as mensagens da Etapa 3"""
+    query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat_id
 
+    logger.info(f"Enviando Etapa 3 (Prévias) para o chat {chat_id}")
+
+    media_group = [
+        InputMediaVideo(media=PREVIEW_VIDEO_ID),
+        InputMediaPhoto(media=PREVIEW_IMAGE_1_ID),
+        InputMediaPhoto(media=PREVIEW_IMAGE_2_ID),
+        InputMediaPhoto(media=PREVIEW_IMAGE_3_ID),
+    ]
+    
+    await context.bot.send_media_group(chat_id=chat_id, media=media_group)
+    
+    # Espera 7 segundos
+    await asyncio.sleep(7)
+
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text="Gostou do que viu, meu bem 🤭?\n\nEssa é só uma PRÉVIA borrada do que te espera bb... 💦"
+    )
+    
+    text2 = """
+Tenho muito mais no VIP pra você (TOTALMENTE SEM CENSURA):
+💎 Vídeos e fotos do jeitinho que você gosta...
+💎 Videos exclusivo pra você, te fazendo go.zar só eu e você
+💎 Meu contato pessoal
+💎 Sempre posto coisa nova lá
+💎 E muito mais meu bem...
+
+Vem goz.ar po.rra quentinha pra mim🥵💦⬇️"""
+
+    keyboard = [[InlineKeyboardButton("CONHECER O VIP🔥", callback_data='vip_options')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=text2,
+        reply_markup=reply_markup
+    )
+
+# ===== ETAPA 2: BOAS-VINDAS =====
+async def send_step2_message(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
+    """Envia a mensagem de boas-vindas da Etapa 2"""
+    logger.info(f"Enviando Etapa 2 (Boas-vindas) para o chat {chat_id}")
+
+    text = "Meu bem, já vou te aceitar no meu grupinho, ta bom?\n\nMas neem precisa esperar, clica aqui no botão pra ver um pedacinho do que te espera... 🔥(É DE GRAÇA!!!)⬇️"
+    keyboard = [[InlineKeyboardButton("VER CONTEÚDINHO DE GRAÇA 🔥🥵", callback_data='step3_previews')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        reply_markup=reply_markup
+    )
+
+# ===== ETAPA 1: COMANDO /START =====
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando /start do bot"""
-    user_id = update.effective_user.id
-    user_name = update.effective_user.first_name or "Usuário"
+    """Gerencia o comando /start e o fluxo inicial"""
+    user = update.effective_user
+    user_id = user.id
+    user_name = user.first_name or "Usuário"
     
     logger.info(f"👤 Usuário {user_name} ({user_id}) iniciou conversa")
     
-    # Processa parâmetro de tracking
+    # Processa parâmetro de tracking (MANTÉM FUNCIONALIDADE EXISTENTE)
     tracking_data = {}
     if context.args:
         encoded_param = ' '.join(context.args)
@@ -137,7 +210,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"❌ Erro buscando tracking: {e}")
     
-    # Salva dados do usuário via API
+    # Salva dados do usuário via API (MANTÉM FUNCIONALIDADE EXISTENTE)
     try:
         user_data = {
             'telegram_id': user_id,
@@ -155,28 +228,65 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.warning(f"⚠️ Erro salvando usuário: {response.status_code}")
     except Exception as e:
         logger.error(f"❌ Erro comunicação API: {e}")
-    
-    # Resposta ao usuário
-    if tracking_data:
-        message = f"👋 Olá {user_name}!\n\n"
-        message += "✅ Tracking capturado com sucesso:\n\n"
+
+    # NOVO: Verificação de membro do grupo
+    try:
+        chat_member = await context.bot.get_chat_member(chat_id=GROUP_ID, user_id=user.id)
+        is_in_group = chat_member.status in ['member', 'administrator', 'creator']
+    except Exception as e:
+        logger.warning(f"Não foi possível verificar o status do usuário {user.id} no grupo {GROUP_ID}: {e}")
+        is_in_group = False
+
+    # Usuário já está no grupo - envia prévias direto
+    if is_in_group:
+        logger.info(f"Usuário {user.id} já está no grupo.")
         
-        # Destacar click_id e utm_source
-        if tracking_data.get('click_id'):
-            message += f"🎯 Click ID: {tracking_data.get('click_id')}\n"
-        if tracking_data.get('utm_source'):
-            message += f"📡 UTM Source: {tracking_data.get('utm_source')}\n"
-        if tracking_data.get('utm_campaign'):
-            message += f"📢 Campanha: {tracking_data.get('utm_campaign')}\n"
-        if tracking_data.get('utm_medium'):
-            message += f"📱 Mídia: {tracking_data.get('utm_medium')}\n"
+        # Mostra tracking se disponível
+        if tracking_data:
+            tracking_msg = f"✅ Tracking preservado:\n"
+            if tracking_data.get('click_id'):
+                tracking_msg += f"🎯 Click ID: {tracking_data.get('click_id')}\n"
+            if tracking_data.get('utm_source'):
+                tracking_msg += f"📡 UTM Source: {tracking_data.get('utm_source')}\n"
+            await update.message.reply_text(tracking_msg)
         
-        message += "\n✅ Todos os dados foram preservados!\n"
-        message += "\nUse /pix para gerar PIX com tracking completo!"
+        text = "Meu bem, que bom te ver de novo! 🔥 Clica aqui pra não perder as novidades quentes que preparei pra você! ⬇️"
+        keyboard = [[InlineKeyboardButton("VER CONTEÚDINHO DE GRAÇA 🔥🥵", callback_data='step3_previews')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_photo(
+            photo=START_IMAGE_ID,
+            caption=text,
+            reply_markup=reply_markup
+        )
+        return
+
+    # Novo usuário ou com parâmetro - convida para grupo
+    click_id_param = " ".join(context.args) if context.args else None
+    if click_id_param:
+        logger.info(f"Usuário {user.id} veio com o parâmetro: {click_id_param}")
+        text = f"Você veio através do meu KWAI (*{click_id_param}*)\n\nMeu bem, entra no meu *GRUPINHO GRÁTIS* pra ver daquele jeito q vc gosta 🥵⬇️"
+        
+        # Mostra tracking detalhado
+        if tracking_data:
+            tracking_msg = f"✅ Tracking capturado:\n"
+            if tracking_data.get('click_id'):
+                tracking_msg += f"🎯 Click ID: {tracking_data.get('click_id')}\n"
+            if tracking_data.get('utm_source'):
+                tracking_msg += f"📡 UTM Source: {tracking_data.get('utm_source')}\n"
+            text = tracking_msg + "\n" + text
     else:
-        message = f"👋 Olá {user_name}!\n\n❌ Nenhum dado de tracking detectado.\nTente acessar via presell primeiro."
-    
-    await update.message.reply_text(message)
+        logger.info(f"Usuário {user.id} é novo.")
+        text = "Meu bem, entra no meu *GRUPINHO GRÁTIS* pra ver daquele jeito q vc gosta 🥵⬇️"
+
+    keyboard = [[InlineKeyboardButton("MEU GRUPINHO🥵?", url=GROUP_INVITE_LINK)]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_photo(
+        photo=START_IMAGE_ID,
+        caption=text,
+        reply_markup=reply_markup,
+        parse_mode=ParseMode.MARKDOWN
+    )
 
 async def pix_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /pix - gera PIX via API Gateway"""
@@ -208,23 +318,106 @@ async def pix_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"❌ Erro comando PIX: {e}")
         await update.message.reply_text("❌ Erro interno do sistema")
 
+# ===== CALLBACK DO PAGAMENTO VIP =====
+async def vip_options_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback para o botão de conhecer o VIP - integra com PIX existente"""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    
+    logger.info(f"💎 Usuário {user_id} clicou para conhecer o VIP")
+    
+    # Integra com sistema PIX existente (MANTÉM FUNCIONALIDADE)
+    try:
+        pix_data = {
+            'user_id': user_id,
+            'valor': 10.0,
+            'plano': 'VIP'
+        }
+        
+        response = requests.post(f"{API_GATEWAY_URL}/api/pix/gerar", json=pix_data, timeout=10)
+        
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('success'):
+                message = f"💰 PIX VIP de R$ {result['valor']} gerado!\n\n"
+                message += f"📋 PIX Copia e Cola:\n`{result['pix_copia_cola']}`\n\n"
+                message += "🔥 Após o pagamento você terá acesso TOTAL ao conteúdo VIP!\n\n"
+                message += "✅ Todos os dados de tracking foram preservados!"
+                
+                await query.edit_message_text(message)
+                logger.info(f"✅ PIX VIP gerado para usuário {user_id}")
+            else:
+                await query.edit_message_text(f"❌ Erro: {result.get('error')}")
+        else:
+            await query.edit_message_text("❌ Erro na comunicação com gateway de pagamento")
+            
+    except Exception as e:
+        logger.error(f"❌ Erro gerando PIX VIP: {e}")
+        await query.edit_message_text("❌ Erro interno do sistema")
+
+# ===== APROVAÇÃO DE ENTRADA NO GRUPO =====
+async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Lida com pedidos de entrada no grupo"""
+    join_request: ChatJoinRequest = update.chat_join_request
+    user_id = join_request.from_user.id
+
+    if join_request.chat.id == GROUP_ID:
+        logger.info(f"Recebido pedido de entrada de {user_id} no grupo {GROUP_ID}")
+        
+        # Envia a Etapa 2 imediatamente
+        await send_step2_message(context, user_id)
+        
+        # Espera 30 segundos
+        await asyncio.sleep(30)
+        
+        # Aprova a entrada
+        try:
+            await context.bot.approve_chat_join_request(chat_id=GROUP_ID, user_id=user_id)
+            logger.info(f"Aprovada entrada de {user_id} no grupo")
+        except Exception as e:
+            logger.error(f"Falha ao aprovar usuário {user_id}: {e}")
 
 def main():
     """Função principal do bot"""
-    logger.info("🤖 === BOT TELEGRAM INICIANDO ===")
+    if not BOT_TOKEN:
+        logger.critical("Variável de ambiente TELEGRAM_BOT_TOKEN não encontrada.")
+        return
+    if not GROUP_ID:
+        logger.critical("Variável de ambiente GROUP_ID não encontrada.")
+        return
+
+    logger.info("🤖 === BOT FUNIL DE VENDAS INICIANDO ===")
     logger.info(f"🔗 API Gateway: {API_GATEWAY_URL}")
     logger.info(f"🗄️ Database: {'PostgreSQL' if DATABASE_URL else 'API Gateway'}")
+    logger.info(f"👥 Grupo ID: {GROUP_ID}")
     
     # Cria aplicação
     application = Application.builder().token(BOT_TOKEN).build()
     
-    # Adiciona handlers
+    # Handlers de Comando
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("pix", pix_command))
     
+    # Handlers de Callback (botões)
+    application.add_handler(CallbackQueryHandler(step3_previews, pattern='^step3_previews$'))
+    application.add_handler(CallbackQueryHandler(vip_options_callback, pattern='^vip_options$'))
+    
+    # Handler de Pedidos de Entrada
+    application.add_handler(ChatJoinRequestHandler(approve_join_request))
+    
     # Executa bot
-    logger.info("🚀 Bot iniciado com sucesso!")
-    application.run_polling(drop_pending_updates=True)
+    logger.info("🚀 Bot do funil iniciado com sucesso!")
+    logger.info("📱 Funcionalidades ativas:")
+    logger.info("   ✅ Tracking UTM completo")
+    logger.info("   ✅ Sistema PIX TriboPay")
+    logger.info("   ✅ PostgreSQL integrado")
+    logger.info("   ✅ Verificação de grupo")
+    logger.info("   ✅ Aprovação automática (30s)")
+    logger.info("   ✅ Galeria de prévias (7s delay)")
+    logger.info("   ✅ Botões VIP integrados")
+    
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
     main()
