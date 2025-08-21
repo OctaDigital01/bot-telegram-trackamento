@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Configurações do bot
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '8422752874:AAFHBrpN2fXOPvQf0-k_786AooAQevUh4kY')
-API_GATEWAY_URL = os.getenv('API_GATEWAY_URL', 'http://localhost:8080')
+API_GATEWAY_URL = os.getenv('API_GATEWAY_URL', 'https://api-gateway.railway.app')
 DATABASE_URL = os.getenv('DATABASE_URL')
 
 def decode_tracking_data(encoded_param):

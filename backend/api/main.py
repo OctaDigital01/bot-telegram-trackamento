@@ -42,6 +42,16 @@ def health():
         'database': 'PostgreSQL' if DATABASE_URL else 'Memory'
     })
 
+@app.route('/', methods=['GET'])
+def index():
+    """Root endpoint"""
+    return jsonify({
+        'status': 'ok',
+        'service': 'API Gateway - Bot Telegram Tracking',
+        'version': '1.0',
+        'endpoints': ['/health', '/api/users', '/api/tracking/get/<id>', '/api/pix/gerar', '/webhook/tribopay']
+    })
+
 @app.route('/api/users', methods=['POST'])
 def save_user():
     """Salva dados do usuário"""
