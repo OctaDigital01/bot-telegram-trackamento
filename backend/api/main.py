@@ -194,12 +194,9 @@ def gerar_pix():
         
         # Gera PIX REAL via TriboPay API
         tribopay_payload = {
-            "api_token": TRIBOPAY_API_KEY,  # API Token no corpo da requisição
-            "offer_hash": "VIP_XTRACKY_10",  # Hash da oferta
-            "amount": float(valor),
+            "value": float(valor) * 100,  # Valor em centavos
             "description": f"Pagamento {plano} - Sistema Xtracky",
-            "external_id": f"user_{user_id}_{int(datetime.now().timestamp())}",
-            "payer": {
+            "customer": {
                 "name": user_data.get('first_name', 'Cliente') if user_data else 'Cliente',
                 "email": f"user{user_id}@xtracky.com",
                 "phone": "11999999999",
@@ -209,24 +206,39 @@ def gerar_pix():
             "metadata": {
                 "user_id": str(user_id),
                 "plano": plano,
-                "tracking": tracking_data
+                "click_id": tracking_data.get('click_id'),
+                "utm_source": tracking_data.get('utm_source'),
+                "utm_campaign": tracking_data.get('utm_campaign')
             }
         }
         
         tribopay_headers = {
-            "Content-Type": "application/json"
+            "Authorization": f"Bearer {TRIBOPAY_API_KEY}",
+            "Content-Type": "application/json",
+            "X-API-KEY": TRIBOPAY_API_KEY
         }
         
-        # Faz requisição para TriboPay
-        logger.info(f"🚀 Fazendo requisição TriboPay: {tribopay_payload}")
+        # Faz requisição para TriboPay - tentando endpoint de cobranças PIX
+        logger.info(f"🚀 Fazendo requisição TriboPay")
         
         try:
+            # Tenta primeiro o endpoint de cobranças PIX
             response = requests.post(
-                "https://api.tribopay.com.br/api/public/v1/transactions",
+                "https://api.tribopay.com.br/v1/charges/pix",
                 json=tribopay_payload,
                 headers=tribopay_headers,
                 timeout=10
             )
+            
+            # Se falhar, tenta o endpoint alternativo
+            if response.status_code == 404:
+                logger.info("🔄 Tentando endpoint alternativo")
+                response = requests.post(
+                    "https://api.tribopay.com.br/api/v1/pix/create",
+                    json=tribopay_payload,
+                    headers=tribopay_headers,
+                    timeout=10
+                )
             
             logger.info(f"📡 TriboPay Response Status: {response.status_code}")
             logger.info(f"📡 TriboPay Response: {response.text}")
