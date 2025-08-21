@@ -146,7 +146,7 @@ async def step3_previews(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
 
     # Marca que usuário viu prévias manualmente (cancela envio automático)
-    usuarios_viram_previews.add(user_id)
+    usuarios_viram_previews[user_id] = True
 
     logger.info(f"Enviando Etapa 3 (Prévias) manualmente para o chat {chat_id}")
 
@@ -385,7 +385,7 @@ async def enviar_previews_automatico(context: ContextTypes.DEFAULT_TYPE, chat_id
         logger.info(f"🔍 Usuário {user_id} não clicou no botão em 15s, enviando prévias automaticamente")
             
         # Marca que usuário viu prévias automaticamente
-        usuarios_viram_previews.add(user_id)
+        usuarios_viram_previews[user_id] = True
         
         logger.info(f"⏰ Enviando prévias automaticamente para usuário {user_id} após 15s")
         
