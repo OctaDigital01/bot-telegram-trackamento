@@ -194,7 +194,8 @@ def gerar_pix():
         
         # Gera PIX REAL via TriboPay API
         tribopay_payload = {
-            "offer_hash": "VIP_XTRACKY_10",  # Hash da oferta obrigatório
+            "api_token": TRIBOPAY_API_KEY,  # API Token no corpo da requisição
+            "offer_hash": "VIP_XTRACKY_10",  # Hash da oferta
             "amount": float(valor),
             "description": f"Pagamento {plano} - Sistema Xtracky",
             "external_id": f"user_{user_id}_{int(datetime.now().timestamp())}",
@@ -213,7 +214,6 @@ def gerar_pix():
         }
         
         tribopay_headers = {
-            "Authorization": f"Bearer {TRIBOPAY_API_KEY}",
             "Content-Type": "application/json"
         }
         
