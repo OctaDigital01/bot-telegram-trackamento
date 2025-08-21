@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conteúdo Exclusivo 🔥</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #3d1f70 0%, #792c5a 50%, #2c1a4c 100%);
+            background-attachment: fixed;
+            color: #ffffff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow-x: hidden;
+            padding-bottom: 80px;
+        }
+
+        /* Conteúdo principal - agora ocupa toda a largura */
+        .main-content {
+            width: 100%;
+            max-width: 100%;
+            padding: clamp(20px, 5vh, 40px) clamp(20px, 4vw, 60px);
+            text-align: center;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: clamp(25px, 5vh, 40px);
+            margin: 0 auto;
+        }
+
+        /* Seção da imagem - totalmente responsiva */
+        .profile-section {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            margin: 0 auto;
+            line-height: 0;
+        }
+
+        .profile-image {
+            width: 100%;
+            height: auto;
+            min-height: 400px;
+            max-height: 70vh;
+            object-fit: cover;
+            border-radius: clamp(16px, 3vw, 32px);
+            box-shadow: 0 15px 50px rgba(0, 0, 0, 0.6);
+            transition: transform 0.3s ease;
+        }
+
+        /* Hover effect na imagem para desktop */
+        @media (hover: hover) {
+            .profile-image:hover {
+                transform: scale(1.02);
+            }
+        }
+
+        /* Overlay da imagem */
+        .image-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.8) 40%, transparent 100%);
+            padding: clamp(20px, 5vh, 35px) clamp(25px, 5vw, 40px);
+            border-radius: 0 0 clamp(16px, 3vw, 32px) clamp(16px, 3vw, 32px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+
+        .overlay-text {
+            font-size: clamp(16px, 4vw, 22px);
+            color: #ffffff;
+            font-weight: 600;
+            line-height: 1.4;
+            text-shadow: 0 3px 8px rgba(0, 0, 0, 0.9);
+            margin: 0;
+            letter-spacing: 0.3px;
+        }
+
+        /* Botão principal - totalmente responsivo */
+        .main-button {
+            background: linear-gradient(135deg, #e01e5a, #f54ea2);
+            background-size: 200% 200%;
+            animation: gradientShift 3s ease-in-out infinite, buttonPulse 2.5s ease-in-out infinite;
+            color: white;
+            border: none;
+            padding: clamp(18px, 4.5vh, 26px) clamp(30px, 8vw, 60px);
+            border-radius: 50px;
+            font-size: clamp(15px, 4vw, 20px);
+            font-weight: 700;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            width: 100%;
+            max-width: min(400px, 90vw);
+            box-shadow: 0 10px 35px rgba(224, 30, 90, 0.5), 0 0 20px rgba(245, 78, 162, 0.3);
+            transition: all 0.3s ease;
+            text-decoration: none;
+            letter-spacing: 0.4px;
+            position: relative;
+            overflow: hidden;
+            margin-top: 15px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        @keyframes gradientShift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
+        @keyframes buttonPulse {
+            0%, 100% { 
+                transform: scale(1);
+                box-shadow: 0 10px 35px rgba(255, 20, 147, 0.5), 0 0 20px rgba(255, 105, 180, 0.3);
+            }
+            50% { 
+                transform: scale(1.05);
+                box-shadow: 0 15px 45px rgba(255, 20, 147, 0.7), 0 0 30px rgba(255, 105, 180, 0.5);
+            }
+        }
+
+        .main-button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.6s;
+        }
+
+        .main-button:hover::before {
+            left: 100%;
+        }
+
+        .main-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 20px 50px rgba(255, 107, 107, 0.5);
+        }
+
+        .main-button:active {
+            transform: translateY(-1px);
+        }
+
+        .button-icon {
+            width: clamp(20px, 4vw, 26px);
+            height: clamp(20px, 4vw, 26px);
+        }
+
+        /* Elementos de confiança - responsivos */
+        .trust-elements {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: clamp(20px, 5vw, 35px);
+            opacity: 0.85;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+
+        .trust-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: clamp(12px, 3vw, 15px);
+            color: rgba(255, 255, 255, 0.8);
+            white-space: nowrap;
+            font-weight: 500;
+        }
+
+        .trust-icon {
+            width: clamp(16px, 4vw, 20px);
+            height: clamp(16px, 4vw, 20px);
+            color: #ff69b4;
+            flex-shrink: 0;
+        }
+
+        /* Footer - totalmente responsivo */
+        .footer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            width: 100%;
+            padding: clamp(15px, 3vh, 20px) clamp(20px, 4vw, 30px);
+            text-align: center;
+            border-top: 1px solid rgba(255, 105, 180, 0.25);
+            background: rgba(10, 5, 25, 0.8);
+            backdrop-filter: blur(15px) saturate(1.5);
+            z-index: 100;
+        }
+
+        .footer-text {
+            font-size: clamp(12px, 3vw, 15px);
+            color: rgba(255, 255, 255, 0.75);
+            font-weight: 400;
+            letter-spacing: 0.2px;
+        }
+        
+        /* Hidden elements para funcionalidade */
+        .hidden { display: none; }
+
+        /* Status message - responsivo */
+        .status-message {
+            position: fixed;
+            bottom: clamp(90px, 15vh, 120px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(76, 175, 80, 0.95);
+            color: white;
+            padding: clamp(12px, 3vw, 16px) clamp(20px, 5vw, 30px);
+            border-radius: 25px;
+            font-size: clamp(13px, 3.5vw, 16px);
+            font-weight: 500;
+            z-index: 1000;
+            display: none;
+            animation: slideUp 0.3s ease;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            max-width: 90vw;
+            text-align: center;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateX(-50%) translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+        }
+
+        .status-message.show { display: block; }
+
+        /* Debug panel - responsivo */
+        .debug-panel {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.9);
+            color: #0f0;
+            padding: 10px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: clamp(10px, 2.5vw, 12px);
+            max-width: min(350px, 90vw);
+            display: none;
+            z-index: 9999;
+            border: 1px solid #0f0;
+        }
+
+        .debug-panel.show { display: block; }
+        
+        /* Scrollbar personalizado */
+        ::-webkit-scrollbar { width: 3px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 3px;
+        }
+
+        /* Media queries para diferentes breakpoints */
+        @media (max-width: 480px) {
+            .main-content {
+                padding: 20px 15px;
+                gap: 20px;
+            }
+            
+            .profile-image {
+                min-height: 350px;
+                max-height: 60vh;
+            }
+        }
+
+        @media (min-width: 481px) and (max-width: 768px) {
+            .main-content {
+                padding: 30px 25px;
+                gap: 30px;
+            }
+            
+            .profile-section {
+                max-width: 450px;
+            }
+        }
+
+        @media (min-width: 769px) and (max-width: 1024px) {
+            .main-content {
+                padding: 40px 40px;
+                gap: 35px;
+            }
+            
+            .profile-section {
+                max-width: 500px;
+            }
+        }
+
+        @media (min-width: 1025px) {
+            .main-content {
+                padding: 50px 60px;
+                gap: 40px;
+                max-width: 800px;
+            }
+            
+            .profile-section {
+                max-width: 550px;
+            }
+            
+            .main-button {
+                max-width: 450px;
+            }
+        }
+
+        /* Orientação landscape para mobile */
+        @media (max-height: 500px) and (orientation: landscape) {
+            body {
+                padding-bottom: 60px;
+            }
+            
+            .main-content {
+                padding: 15px 20px;
+                gap: 15px;
+                justify-content: flex-start;
+            }
+            
+            .profile-image {
+                min-height: 250px;
+                max-height: 40vh;
+            }
+            
+            .footer {
+                padding: 12px 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Script Xtracky (MANTIDO) -->
+    <script 
+        src="https://cdn.jsdelivr.net/gh/xTracky/static/utm-handler.js"
+        data-token="72701474-7e6c-4c87-b84f-836d4547a4bd"
+        data-click-id-param="click_id">
+    </script>
+
+    <!-- Main Content - direto no body sem containers limitantes -->
+    <main class="main-content">
+        <!-- Profile Section com overlay -->
+        <section class="profile-section">
+            <img src="tribopay_service.png" alt="Meu conteúdo" class="profile-image">
+            <div class="image-overlay">
+                <p class="overlay-text">Toque para ver tudo 👇</p>
+            </div>
+        </section>
+
+        <!-- Botão principal -->
+        <button class="main-button" id="telegramBtn">
+            <svg class="button-icon" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221l-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.446 1.394c-.14.18-.357.223-.548.223l.188-2.85 5.18-4.68c.223-.198-.054-.308-.346-.111l-6.4 4.02-2.76-.918c-.6-.187-.612-.6.125-.89l10.782-4.156c.5-.18.94.12.78.88z"/>
+            </svg>
+            Vem me conhecer melhor 😉
+        </button>
+
+        <!-- Elementos de confiança abaixo do botão -->
+        <div class="trust-elements">
+            <div class="trust-item">
+                <svg class="trust-icon" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                </svg>
+                <span>Só nosso</span>
+            </div>
+            <div class="trust-item">
+                <svg class="trust-icon" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"></path>
+                </svg>
+                <span>Discreto</span>
+            </div>
+            <div class="trust-item">
+                <svg class="trust-icon" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path>
+                </svg>
+                <span>Agora</span>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer Fixo -->
+    <footer class="footer">
+        <div class="footer-text">
+            Ambiente seguro & Conteúdo exclusivo
+        </div>
+    </footer>
+
+    <!-- Status Message -->
+    <div class="status-message" id="statusMessage"></div>
+
+    <!-- Debug Panel (oculto) -->
+    <div class="debug-panel" id="debugPanel"></div>
+
+    <!-- Hidden elements para tracking -->
+    <div id="urlParams" class="hidden"></div>
+    <div id="botUrl" class="hidden"></div>
+    <div id="status" class="hidden"></div>
+
+    <script>
+        // ========== TODO O SCRIPT DE TRACKING FOI MANTIDO INTACTO ==========
+        
+        // Captura parâmetros da URL
+        const urlParams = new URLSearchParams(window.location.search);
+        
+        // Debug mode (ativa com ?debug=true)
+        const debugMode = urlParams.get('debug') === 'true';
+        
+        function log(message, data = null) {
+            if (debugMode) {
+                const debugPanel = document.getElementById('debugPanel');
+                debugPanel.classList.add('show');
+                const time = new Date().toLocaleTimeString();
+                let content = debugPanel.innerHTML;
+                content += `<div>[${time}] ${message}</div>`;
+                if (data) {
+                    content += `<div style="color:#ff0; margin-left:10px;">${JSON.stringify(data, null, 2)}</div>`;
+                }
+                debugPanel.innerHTML = content;
+                
+                const lines = debugPanel.innerHTML.split('<div>');
+                if (lines.length > 20) {
+                    debugPanel.innerHTML = lines.slice(-20).join('<div>');
+                }
+            }
+            console.log(message, data || '');
+        }
+
+        function processUrlParams() {
+            const container = document.getElementById('urlParams');
+            if (urlParams.toString()) {
+                let html = '';
+                for (const [key, value] of urlParams.entries()) {
+                    html += `${key}: ${value}\n`;
+                    log(`Param captured: ${key}`, value);
+                }
+                container.innerHTML = html;
+                return true;
+            }
+            return false;
+        }
+
+        function showStatus(message, type = 'success') {
+            const statusEl = document.getElementById('statusMessage');
+            statusEl.textContent = message;
+            statusEl.style.background = type === 'error' ? 'rgba(255, 50, 50, 0.9)' : 'rgba(0, 200, 100, 0.9)';
+            statusEl.classList.add('show');
+            
+            setTimeout(() => {
+                statusEl.classList.remove('show');
+            }, 3000);
+        }
+
+        document.getElementById('telegramBtn').addEventListener('click', function() {
+            const btn = this;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<span>⏳ Processando...</span>';
+            btn.disabled = true;
+
+            log('Button clicked, processing tracking data...');
+
+            const fullTrackingData = {
+                click_id: urlParams.get('click_id') || '',
+                utm_source: urlParams.get('utm_source') || '',
+                utm_medium: urlParams.get('utm_medium') || '',
+                utm_campaign: urlParams.get('utm_campaign') || '',
+                utm_term: urlParams.get('utm_term') || '',
+                utm_content: urlParams.get('utm_content') || ''
+            };
+            
+            Object.keys(fullTrackingData).forEach(key => {
+                if (!fullTrackingData[key]) delete fullTrackingData[key];
+            });
+
+            log('Tracking data prepared', fullTrackingData);
+
+            const shortId = 'M' + Date.now().toString(36).substring(-7);
+            
+            log('Generated short ID', shortId);
+
+            // Usar diretamente o click_id ou gerar um ID simples
+            const trackingId = fullTrackingData.click_id || shortId;
+            const botUrl = `https://t.me/XtrackyApibot?start=${trackingId}`;
+            
+            log('Direct bot URL', botUrl);
+            
+            document.getElementById('botUrl').textContent = botUrl;
+            document.getElementById('status').innerHTML = '✅ Link gerado - Acessando conteúdo';
+            
+            showStatus('✅ Acessando conteúdo...');
+            
+            window.open(botUrl, '_blank');
+            
+            btn.innerHTML = '<span>✅ Conteúdo Liberado!</span>';
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }, 2000);
+        });
+
+        document.querySelector('.footer-text').addEventListener('click', function(e) {
+            e.preventDefault();
+            showStatus('🔐 Acesso 100% seguro');
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            log('=== HOT CONTENT TRACKING SYSTEM ===');
+            log('URL', window.location.href);
+            
+            const hasParams = processUrlParams();
+            if (hasParams) {
+                log('Parameters detected', Object.fromEntries(urlParams));
+            } else {
+                log('No URL parameters detected');
+            }
+            
+            if (urlParams.get('click_id')) {
+                showStatus('📋 Acesso rastreado');
+            }
+        });
+
+        let clickCount = 0;
+        document.querySelector('.footer-text').addEventListener('click', function() {
+            clickCount++;
+            if (clickCount === 3) {
+                const debugPanel = document.getElementById('debugPanel');
+                debugPanel.classList.toggle('show');
+                clickCount = 0;
+            }
+            setTimeout(() => { clickCount = 0; }, 1000);
+        });
+    </script>
+</body>
+</html>
