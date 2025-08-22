@@ -143,23 +143,30 @@ async def verificar_pix_existente(user_id: int, plano_id: str):
     #======== VERIFICA SE JÁ EXISTE PIX VÁLIDO PARA O PLANO =============
     try:
         logger.info(f"🔍 VERIFICANDO PIX EXISTENTE: user_id={user_id}, plano_id={plano_id}")
+        logger.info(f"📡 CHAMANDO API VERIFICAÇÃO: GET {API_GATEWAY_URL}/api/pix/verificar/{user_id}/{plano_id}")
         response = await http_client.get(f"{API_GATEWAY_URL}/api/pix/verificar/{user_id}/{plano_id}")
-        logger.info(f"📡 Response status: {response.status_code}")
+        logger.info(f"📡 RESPONSE VERIFICAÇÃO: status={response.status_code}")
         
         if response.status_code == 200:
             result = response.json()
-            logger.info(f"📦 Response data: {result}")
+            logger.info(f"📦 RESPONSE DATA VERIFICAÇÃO: {result}")
             
-            if result.get('success') and result.get('pix_valido'):
+            success = result.get('success')
+            pix_valido = result.get('pix_valido')
+            logger.info(f"📊 ANÁLISE RESPONSE: success={success}, pix_valido={pix_valido}")
+            
+            if success and pix_valido:
                 pix_data = result.get('pix_data')
-                logger.info(f"✅ PIX VÁLIDO ENCONTRADO: {pix_data.get('transaction_id') if pix_data else 'None'}")
+                transaction_id = pix_data.get('transaction_id') if pix_data else 'None'
+                status = pix_data.get('status') if pix_data else 'None'
+                logger.info(f"✅ PIX VÁLIDO ENCONTRADO: transaction_id={transaction_id}, status={status}")
                 return pix_data
             else:
-                logger.info(f"❌ PIX NÃO VÁLIDO: success={result.get('success')}, pix_valido={result.get('pix_valido')}")
+                logger.info(f"❌ PIX NÃO VÁLIDO ENCONTRADO: success={success}, pix_valido={pix_valido}")
         else:
-            logger.error(f"❌ Erro HTTP ao verificar PIX: {response.status_code} - {response.text}")
+            logger.error(f"❌ ERRO HTTP na verificação PIX: {response.status_code} - {response.text}")
     except Exception as e:
-        logger.error(f"❌ Erro verificando PIX existente: {e}")
+        logger.error(f"❌ ERRO CRÍTICO verificando PIX existente: {e}")
     
     logger.info(f"🚫 RETORNANDO NONE - Nenhum PIX válido para user {user_id}, plano {plano_id}")
     return None
@@ -240,12 +247,22 @@ def calcular_tempo_restante(pix_data: dict) -> int:
 async def invalidar_pix_usuario(user_id: int):
     #======== INVALIDA TODOS OS PIX PENDENTES DO USUÁRIO =============
     try:
+        logger.info(f"📡 CHAMANDO API INVALIDAÇÃO: POST {API_GATEWAY_URL}/api/pix/invalidar/{user_id}")
         response = await http_client.post(f"{API_GATEWAY_URL}/api/pix/invalidar/{user_id}")
+        logger.info(f"📡 RESPONSE INVALIDAÇÃO: status={response.status_code}")
+        
         if response.status_code == 200:
             result = response.json()
-            return result.get('success', False)
+            logger.info(f"📦 RESPONSE DATA INVALIDAÇÃO: {result}")
+            success = result.get('success', False)
+            message = result.get('message', 'Sem mensagem')
+            logger.info(f"✅ INVALIDAÇÃO PROCESSADA: success={success}, message='{message}'")
+            return success
+        else:
+            logger.error(f"❌ ERRO HTTP na invalidação: {response.status_code} - {response.text}")
+            return False
     except Exception as e:
-        logger.error(f"❌ Erro invalidando PIX do usuário: {e}")
+        logger.error(f"❌ ERRO CRÍTICO invalidando PIX do usuário {user_id}: {e}")
     return False
     #================= FECHAMENTO ======================
 
@@ -400,12 +417,26 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['chat_id'] = chat_id
     
     # NOVA SESSÃO: Invalida TODOS os PIX anteriores do usuário
-    # Cada /start deve ser uma sessão independente
-    logger.info(f"🔄 NOVA SESSÃO: Invalidando PIX anteriores para usuário {user.id}")
-    if await invalidar_pix_usuario(user.id):
-        logger.info(f"✅ PIX anteriores invalidados com sucesso para usuário {user.id}")
+    # Cada /start deve ser uma sessão completamente independente
+    logger.info(f"🔄 NOVA SESSÃO INICIADA: Invalidando TODOS os PIX anteriores para usuário {user.id}")
+    
+    # STEP 1: Invalida todos os PIX anteriores
+    invalidacao_sucesso = await invalidar_pix_usuario(user.id)
+    logger.info(f"📊 RESULTADO INVALIDAÇÃO: sucesso={invalidacao_sucesso} para usuário {user.id}")
+    
+    if invalidacao_sucesso:
+        logger.info(f"✅ PIX anteriores INVALIDADOS com sucesso para usuário {user.id}")
     else:
-        logger.warning(f"⚠️ Falha ao invalidar PIX anteriores para usuário {user.id}")
+        logger.warning(f"⚠️ Falha ou nenhum PIX encontrado para invalidar do usuário {user.id}")
+    
+    # STEP 2: Aguarda 100ms para garantir que invalidação foi processada no banco
+    import time
+    await asyncio.sleep(0.1)
+    
+    # STEP 3: Armazena flag de nova sessão para garantir que próximos PIX sejam sempre novos
+    context.user_data['nova_sessao_start'] = True
+    context.user_data['session_id'] = f"{user.id}_{int(time.time())}"
+    logger.info(f"🆔 NOVA SESSION_ID criada: {context.user_data['session_id']}")
     
     # Remove jobs de timeout PIX que possam estar ativos
     await remove_job_if_exists(f"timeout_pix_{user.id}", context)
@@ -632,28 +663,39 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
         await context.bot.send_message(chat_id, "❌ Ops! Ocorreu um erro. Por favor, tente novamente.")
         return
 
-    # LÓGICA DE REUTILIZAÇÃO DE PIX IMPLEMENTADA - CRÍTICO
-    logger.info(f"🔍 VERIFICANDO PIX EXISTENTE: user_id={user_id}, plano_id={plano_id}")
-    pix_existente = await verificar_pix_existente(user_id, plano_id)
+    # VERIFICAÇÃO CRÍTICA: Nova sessão sempre gera PIX novo
+    nova_sessao = context.user_data.get('nova_sessao_start', False)
+    session_id = context.user_data.get('session_id', 'sem_session')
     
-    if pix_existente:
-        logger.info(f"📦 PIX ENCONTRADO: {pix_existente}")
-        
-        # Calcula tempo restante com nova função corrigida
-        tempo_restante = calcular_tempo_restante(pix_existente)
-        logger.info(f"⏰ TEMPO CALCULADO: {tempo_restante} minutos")
-        
-        if tempo_restante > 0:  # PIX ainda válido
-            logger.info(f"✅ PIX VÁLIDO - REUTILIZANDO para {user_id}")
-            logger.info(f"♻️ Plano: {plano_selecionado['nome']} - Tempo restante: {tempo_restante} min")
-            await enviar_mensagem_pix(context, chat_id, user_id, plano_selecionado, pix_existente, is_reused=True)
-            return
-        else:
-            logger.info(f"❌ PIX EXPIRADO (0 minutos) para {user_id} - Gerando novo PIX")
-            # PIX expirado, invalida e gera novo
-            await invalidar_pix_usuario(user_id)
+    if nova_sessao:
+        logger.info(f"🚨 NOVA SESSÃO DETECTADA ({session_id}): PULANDO verificação de PIX existente")
+        logger.info(f"💳 Gerando PIX NOVO obrigatoriamente para usuário {user_id}")
+        # Limpa a flag após usar
+        context.user_data['nova_sessao_start'] = False
+        # PIX completamente novo será gerado abaixo
     else:
-        logger.info(f"🚫 NENHUM PIX encontrado para {user_id}, plano {plano_id}")
+        # LÓGICA ANTIGA DE REUTILIZAÇÃO - só se não é nova sessão
+        logger.info(f"🔍 VERIFICANDO PIX EXISTENTE (sessão anterior): user_id={user_id}, plano_id={plano_id}")
+        pix_existente = await verificar_pix_existente(user_id, plano_id)
+        
+        if pix_existente:
+            logger.info(f"📦 PIX ENCONTRADO (sessão anterior): {pix_existente}")
+            
+            # Calcula tempo restante com nova função corrigida
+            tempo_restante = calcular_tempo_restante(pix_existente)
+            logger.info(f"⏰ TEMPO CALCULADO: {tempo_restante} minutos")
+            
+            if tempo_restante > 0:  # PIX ainda válido
+                logger.info(f"✅ PIX VÁLIDO (sessão anterior) - REUTILIZANDO para {user_id}")
+                logger.info(f"♻️ Plano: {plano_selecionado['nome']} - Tempo restante: {tempo_restante} min")
+                await enviar_mensagem_pix(context, chat_id, user_id, plano_selecionado, pix_existente, is_reused=True)
+                return
+            else:
+                logger.info(f"❌ PIX EXPIRADO (0 minutos) para {user_id} - Gerando novo PIX")
+                # PIX expirado, invalida e gera novo
+                await invalidar_pix_usuario(user_id)
+        else:
+            logger.info(f"🚫 NENHUM PIX encontrado para {user_id}, plano {plano_id}")
     
     # Se chegou aqui, precisa GERAR NOVO PIX
     logger.info(f"💳 Gerando PIX NOVO para {user_id} - Plano: {plano_selecionado['nome']}")
