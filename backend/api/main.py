@@ -37,88 +37,21 @@ except Exception as e:
     logger.error(f"❌ Erro ao conectar PostgreSQL: {e}")
     db = None
 
-# Cache de produtos TriboPay (evita flooding da API)
-TRIBOPAY_PRODUCTS_CACHE = {
-    # "VIP_1000": "product_hash_123",  # plano_valor_centavos: hash
+# Mapeamento fixo de planos para offer_hash TriboPay
+TRIBOPAY_OFFER_MAPPING = {
+    "plano_desc_etapa5": "gruqs",      # R$ 19,90 - VIP com Desconto
+    "plano_desc_20_off": "gruqs",      # R$ 19,90 - VIP com 20% OFF (mesmo hash)
+    "plano_1mes": "gikxo",              # R$ 24,90 - ACESSO VIP
+    "plano_3meses": "xuz06",            # R$ 49,90 - VIP + BRINDES
+    "plano_1ano": "xlyfd",              # R$ 67,00 - TUDO + CONTATO DIRETO
+    "default": "gikxo"                  # Fallback para R$ 24,90
 }
 
-def get_or_create_tribopay_product(cache_key, plano, valor):
-    """Busca produto no cache ou cria novo na TriboPay se necessário"""
-    
-    # Primeiro verifica cache em memória
-    if cache_key in TRIBOPAY_PRODUCTS_CACHE:
-        product_hash = TRIBOPAY_PRODUCTS_CACHE[cache_key]
-        logger.info(f"📦 Produto encontrado no cache: {cache_key} -> {product_hash}")
-        return product_hash
-    
-    # Se não está no cache, busca no banco de dados
-    if db:
-        try:
-            cached_product = db.get_cached_product(cache_key)
-            if cached_product:
-                product_hash = cached_product['product_hash']
-                # Atualiza cache em memória
-                TRIBOPAY_PRODUCTS_CACHE[cache_key] = product_hash
-                logger.info(f"📦 Produto encontrado no DB cache: {cache_key} -> {product_hash}")
-                return product_hash
-        except Exception as e:
-            logger.warning(f"⚠️ Erro buscando produto no cache DB: {e}")
-    
-    # Se não existe, cria novo produto na TriboPay
-    logger.info(f"📦 Criando novo produto TriboPay: {cache_key}")
-    product_payload = {
-        "title": f"Plano VIP - {plano}",
-        "cover": "https://ana-cardoso.shop/icon-check.png", 
-        "sale_page": "https://ana-cardoso.shop",
-        "payment_type": 1,
-        "product_type": "digital",
-        "delivery_type": 1,
-        "id_category": 1,
-        "amount": int(valor * 100)
-    }
-    
-    tribopay_headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json"
-    }
-    
-    try:
-        # Criar produto na TriboPay
-        product_response = requests.post(
-            f"https://api.tribopay.com.br/api/public/v1/products?api_token={TRIBOPAY_API_KEY}",
-            json=product_payload,
-            headers=tribopay_headers,
-            timeout=10
-        )
-        
-        if product_response.status_code != 201:
-            logger.error(f"❌ Erro ao criar produto: {product_response.status_code} - {product_response.text}")
-            return None
-        
-        product_data = product_response.json()
-        product_hash = product_data.get('hash', '')
-        
-        if product_hash:
-            # Salva no cache em memória
-            TRIBOPAY_PRODUCTS_CACHE[cache_key] = product_hash
-            
-            # Salva no cache do banco de dados
-            if db:
-                try:
-                    db.save_cached_product(cache_key, product_hash, plano, valor)
-                    logger.info(f"✅ Produto salvo no DB cache: {cache_key} -> {product_hash}")
-                except Exception as e:
-                    logger.warning(f"⚠️ Erro salvando produto no DB cache: {e}")
-            
-            logger.info(f"✅ Novo produto TriboPay criado: {product_hash}")
-            return product_hash
-        else:
-            logger.error("❌ TriboPay não retornou product_hash")
-            return None
-            
-    except Exception as e:
-        logger.error(f"❌ Erro criando produto TriboPay: {e}")
-        return None
+def get_offer_hash_by_plano_id(plano_id):
+    """Retorna offer_hash fixo baseado no plano_id"""
+    offer_hash = TRIBOPAY_OFFER_MAPPING.get(plano_id, TRIBOPAY_OFFER_MAPPING["default"])
+    logger.info(f"📦 Offer hash mapeado: {plano_id} -> {offer_hash}")
+    return offer_hash
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -138,7 +71,7 @@ def index():
         'status': 'ok',
         'service': 'API Gateway - Bot Telegram Tracking',
         'version': '1.0',
-        'endpoints': ['/health', '/api/users', '/api/tracking/get/<id>', '/api/pix/gerar', '/api/pix/verificar/<user_id>/<plano_id>', '/api/pix/invalidar/<user_id>', '/webhook/tribopay', '/migrate/add_plano_id']
+        'endpoints': ['/health', '/api/users', '/api/tracking/get/<id>', '/api/pix/gerar', '/api/pix/verificar/<user_id>/<plano_id>', '/api/pix/invalidar/<user_id>', '/webhook/tribopay']
     })
 
 @app.route('/migrate/add_plano_id', methods=['POST'])
@@ -386,8 +319,7 @@ def gerar_pix():
         data = request.get_json()
         user_id = data.get('user_id')
         valor = data.get('valor', 10.0)
-        plano = data.get('plano', 'VIP')
-        plano_id = data.get('plano_id', 'default')  # ID do plano para cache
+        plano_id = data.get('plano_id', 'default')  # ID do plano para mapeamento
         
         # Busca dados do usuário no PostgreSQL
         if db:
@@ -413,15 +345,14 @@ def gerar_pix():
         logger.info(f"💰 Gerando PIX REAL TriboPay R$ {valor} para usuário {user_id}")
         logger.info(f"📊 Tracking preservado: {tracking_data}")
         
-        # Sistema de cache de produtos - evita criar produtos desnecessários
-        product_cache_key = f"{plano}_{int(valor * 100)}"
-        product_hash = get_or_create_tribopay_product(product_cache_key, plano, valor)
+        # Obtém offer_hash fixo baseado no plano_id
+        offer_hash = get_offer_hash_by_plano_id(plano_id)
         
-        if not product_hash:
-            logger.error("❌ Falha ao obter product_hash da TriboPay")
-            return jsonify({'success': False, 'error': 'Erro na criação do produto'}), 500
+        if not offer_hash:
+            logger.error("❌ Falha ao obter offer_hash para o plano")
+            return jsonify({'success': False, 'error': 'Plano inválido'}), 500
         
-        logger.info(f"✅ Produto TriboPay: {product_hash} (cache: {product_cache_key})")
+        logger.info(f"✅ Offer TriboPay: {offer_hash} (plano: {plano_id})")
         
         # Headers para requisições TriboPay
         tribopay_headers = {
@@ -433,10 +364,10 @@ def gerar_pix():
             # Criar a transação PIX usando produto do cache
             valor_centavos = int(valor * 100)
             
-            # Adicionar parâmetros de tracking UTM ao payload
+            # Payload simplificado usando offer_hash fixo
             tribopay_payload = {
                 "amount": valor_centavos,
-                "offer_hash": product_hash,  # OBRIGATÓRIO - hash do produto criado
+                "offer_hash": offer_hash,  # OBRIGATÓRIO - hash da oferta fixa
                 "payment_method": "pix",  # OBRIGATÓRIO
                 "customer": {
                     "name": user_data.get('first_name', 'Cliente') if user_data else 'Cliente',
@@ -444,16 +375,6 @@ def gerar_pix():
                     "phone_number": "11999999999",
                     "document": "00000000000"
                 },
-                "cart": [
-                    {
-                        "product_hash": product_hash,
-                        "title": f"Plano VIP - {plano}",
-                        "price": valor_centavos,
-                        "quantity": 1,
-                        "operation_type": 1,
-                        "tangible": False
-                    }
-                ],
                 "expire_in_days": 1,  # Mínimo da API
                 "transaction_origin": "api",
                 "installments": 1,  # OBRIGATÓRIO para PIX
