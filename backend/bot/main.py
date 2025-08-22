@@ -93,29 +93,65 @@ http_client = httpx.AsyncClient(
 
 async def decode_tracking_data(encoded_param: str):
     #======== DECODIFICA DADOS DE TRACKING =============
-    # Lógica original mantida
+    logger.info(f"🔍 Decodificando tracking: {encoded_param}")
+    
+    # Se o parâmetro estiver vazio, tenta buscar último tracking disponível
+    if not encoded_param or encoded_param.strip() == '':
+        try:
+            response = await http_client.get(f"{API_GATEWAY_URL}/api/tracking/latest")
+            if response.status_code == 200 and response.json().get('success'):
+                latest_data = json.loads(response.json()['original'])
+                logger.info(f"✅ Usando último tracking disponível: {latest_data}")
+                return latest_data
+        except Exception as e:
+            logger.error(f"❌ Erro buscando último tracking: {e}")
+        return {'utm_source': 'direct_bot', 'click_id': 'direct_access'}
+    
     try:
+        # Método 1: ID mapeado (começa com M e tem até 12 caracteres)
         if encoded_param.startswith('M') and len(encoded_param) <= 12:
             try:
                 response = await http_client.get(f"{API_GATEWAY_URL}/api/tracking/get/{encoded_param}")
                 if response.status_code == 200 and response.json().get('success'):
                     original_data = json.loads(response.json()['original'])
+                    logger.info(f"✅ Tracking mapeado recuperado: {original_data}")
                     return original_data
-            except Exception as e: logger.error(f"❌ Erro API tracking: {e}")
+                else:
+                    logger.warning(f"⚠️ Tracking mapeado não encontrado: {encoded_param}")
+            except Exception as e:
+                logger.error(f"❌ Erro API tracking mapeado: {e}")
             return {'click_id': encoded_param}
+        
+        # Método 2: Base64 JSON
         try:
             decoded_bytes = base64.b64decode(encoded_param.encode('utf-8'))
             tracking_data = json.loads(decoded_bytes.decode('utf-8'))
+            logger.info(f"✅ Tracking Base64 decodificado: {tracking_data}")
             return tracking_data
         except Exception:
+            # Método 3: Formato :: separado (Xtracky)
             if '::' in encoded_param:
                 parts = encoded_param.split('::')
-                tracking_data = {k: v for k, v in {'utm_source': parts[0] if len(parts) > 0 else None, 'click_id': parts[1] if len(parts) > 1 else None, 'utm_medium': parts[2] if len(parts) > 2 else None, 'utm_campaign': parts[3] if len(parts) > 3 else None, 'utm_term': parts[4] if len(parts) > 4 else None, 'utm_content': parts[5] if len(parts) > 5 else None}.items() if v}
+                tracking_data = {
+                    'utm_source': parts[0] if len(parts) > 0 and parts[0] else None,
+                    'click_id': parts[1] if len(parts) > 1 and parts[1] else None,
+                    'utm_medium': parts[2] if len(parts) > 2 and parts[2] else None,
+                    'utm_campaign': parts[3] if len(parts) > 3 and parts[3] else None,
+                    'utm_term': parts[4] if len(parts) > 4 and parts[4] else None,
+                    'utm_content': parts[5] if len(parts) > 5 and parts[5] else None
+                }
+                # Remove valores None ou vazios
+                tracking_data = {k: v for k, v in tracking_data.items() if v}
+                logger.info(f"✅ Tracking :: formato decodificado: {tracking_data}")
                 return tracking_data
+        
+        # Fallback: usa como click_id direto
+        logger.info(f"⚠️ Usando fallback - click_id direto: {encoded_param}")
         return {'click_id': encoded_param}
+        
     except Exception as e:
-        logger.error(f"❌ Erro decodificação: {e}")
-        return {'click_id': encoded_param}
+        logger.error(f"❌ Erro crítico decodificação: {e}")
+        return {'click_id': encoded_param, 'utm_source': 'decode_error'}
     #================= FECHAMENTO ======================
 
 async def remove_job_if_exists(name: str, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -164,12 +200,34 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"👤 ETAPA 1: Usuário {user.first_name} ({user.id}) iniciou o bot.")
     
     # Decodifica e salva dados de tracking
-    tracking_data = await decode_tracking_data(' '.join(context.args)) if context.args else {'utm_source': 'direct_bot', 'click_id': 'direct'}
+    tracking_param = ' '.join(context.args) if context.args else ''
+    tracking_data = await decode_tracking_data(tracking_param)
+    
+    logger.info(f"🎯 Tracking processado: {tracking_data}")
+    
     try:
-        user_data_payload = {'telegram_id': user.id, 'username': user.username or user.first_name, 'first_name': user.first_name, 'last_name': user.last_name or '', 'tracking_data': tracking_data}
-        await http_client.post(f"{API_GATEWAY_URL}/api/users", json=user_data_payload)
+        user_data_payload = {
+            'telegram_id': user.id,
+            'username': user.username or user.first_name,
+            'first_name': user.first_name,
+            'last_name': user.last_name or '',
+            'tracking_data': tracking_data
+        }
+        
+        logger.info(f"📤 Enviando dados para API: {user_data_payload}")
+        response = await http_client.post(f"{API_GATEWAY_URL}/api/users", json=user_data_payload)
+        
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('success'):
+                logger.info(f"✅ Usuário {user.id} salvo com sucesso na API")
+            else:
+                logger.error(f"❌ API retornou erro: {result}")
+        else:
+            logger.error(f"❌ Erro HTTP salvando usuário {user.id}: {response.status_code} - {response.text}")
+            
     except Exception as e:
-        logger.error(f"❌ Erro ao salvar usuário {user.id}: {e}")
+        logger.error(f"❌ Erro crítico salvando usuário {user.id}: {e}")
 
     # Envia a mensagem inicial
     text = "Meu bem, entra no meu *GRUPINHO GRÁTIS* pra ver daquele jeito q vc gosta 🥵⬇️"
@@ -373,12 +431,22 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
     
     try:
         pix_data = {'user_id': user_id, 'valor': plano_selecionado['valor'], 'plano': plano_selecionado['nome']}
-        response = await http_client.post(f"{API_GATEWAY_URL}/api/pix/gerar", json=pix_data)
+        logger.info(f"🚀 Enviando dados PIX para API: {pix_data}")
         
-        if not (response.status_code == 200 and response.json().get('success')):
+        response = await http_client.post(f"{API_GATEWAY_URL}/api/pix/gerar", json=pix_data)
+        logger.info(f"📡 Resposta API PIX: {response.status_code}")
+        
+        if response.status_code != 200:
+            logger.error(f"❌ Erro HTTP gerando PIX: {response.status_code} - {response.text}")
             raise Exception(f"API PIX falhou: {response.status_code} - {response.text}")
         
         result = response.json()
+        logger.info(f"✅ PIX gerado com sucesso: {result.get('transaction_id', 'N/A')}")
+        
+        if not result.get('success'):
+            logger.error(f"❌ API PIX retornou erro: {result}")
+            raise Exception(f"API PIX retornou erro: {result.get('error', 'Unknown error')}")
+        
         await msg_loading.delete()
         
         pix_copia_cola = result['pix_copia_cola']
