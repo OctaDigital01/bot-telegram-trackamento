@@ -56,9 +56,9 @@ MEDIA_PROVOCATIVA = os.getenv('MEDIA_PROVOCATIVA')
 
 # ======== CONFIGURAÇÃO DOS PLANOS VIP =============
 VIP_PLANS = {
-    "plano_1": {"id": "plano_1mes", "nome": "ACESSO VIP", "valor": 24.90, "botao_texto": "💦 R$ 24,90 - ACESSO VIP"},
-    "plano_2": {"id": "plano_3meses", "nome": "VIP + BRINDES", "valor": 49.90, "botao_texto": "🔥 R$ 49,90 - VIP + BRINDES"},
-    "plano_3": {"id": "plano_1ano", "nome": "TUDO + CONTATO DIRETO", "valor": 67.00, "botao_texto": "💎 R$ 67,00 - TUDO + CONTATO DIRETO"}
+    "plano_1": {"id": "plano_1mes", "nome": "ACESSO VIP COMPLETO", "valor": 24.90, "botao_texto": "💦 R$ 24,90 - ME VER SEM CENSURA"},
+    "plano_2": {"id": "plano_3meses", "nome": "VIP + PACK ESPECIAL", "valor": 49.90, "botao_texto": "🔥 R$ 49,90 - TUDO + PACK EXCLUSIVO"},
+    "plano_3": {"id": "plano_1ano", "nome": "ACESSO TOTAL + EU SÓ PRA VOCÊ", "valor": 67.00, "botao_texto": "💎 R$ 67,00 - SER MEU NAMORADO VIP"}
 }
 # ==================================================
 
@@ -201,6 +201,46 @@ async def remove_job_if_exists(name: str, context: ContextTypes.DEFAULT_TYPE) ->
     return True
     #================= FECHAMENTO ======================
 
+async def job_timeout_pix(context: ContextTypes.DEFAULT_TYPE):
+    #======== JOB EXECUTADO APÓS 60 MIN SEM PAGAMENTO =============
+    job = context.job
+    chat_id = job.chat_id
+    user_id = job.user_id
+    
+    logger.info(f"⏰ TIMEOUT PIX: Executando timeout para usuário {user_id} após 60 minutos")
+    
+    try:
+        # Invalida o PIX expirado
+        invalidou = await invalidar_pix_usuario(user_id)
+        if invalidou:
+            logger.info(f"🗑️ PIX expirado invalidado para usuário {user_id}")
+        
+        # Envia mensagem de desconto especial
+        texto_desconto_timeout = (
+            "😳 <b>Opa, meu amor... vi que você não finalizou o pagamento!</b>\n\n"
+            "💔 Sei que às vezes a gente fica na dúvida, né?\n\n"
+            "🎁 <b>ÚLTIMA CHANCE:</b> Vou liberar um <b>DESCONTO ESPECIAL</b> só pra você!\n\n"
+            "⚡ <b>20% OFF + Bônus Exclusivos</b> que só quem quase desistiu vai ter!\n\n"
+            "🔥 <b>É AGORA OU NUNCA, amor...</b> 👇"
+        )
+        
+        # Plano especial com 20% de desconto
+        plano_desc = REMARKETING_PLANS["plano_desc_20_off"]
+        keyboard = [[InlineKeyboardButton(plano_desc["botao_texto"], callback_data=f"plano:{plano_desc['id']}")]]
+        
+        await context.bot.send_message(
+            chat_id=chat_id, 
+            text=texto_desconto_timeout, 
+            reply_markup=InlineKeyboardMarkup(keyboard), 
+            parse_mode='HTML'
+        )
+        
+        logger.info(f"✅ Mensagem de desconto especial enviada para {user_id}")
+        
+    except Exception as e:
+        logger.error(f"❌ Erro no timeout PIX para usuário {user_id}: {e}")
+    #================= FECHAMENTO ======================
+
 async def delete_message_if_exists(context: ContextTypes.DEFAULT_TYPE, key: str, allow_delete: bool = True):
     #======== DELETA MENSAGEM ANTERIOR USANDO user_data =============
     if not allow_delete:
@@ -253,6 +293,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Limpa dados de um fluxo anterior para garantir um começo novo
     context.user_data.clear()
     context.user_data['chat_id'] = chat_id
+    
+    # Invalida todos os PIX pendentes do usuário ao dar /start novamente
+    invalidou_pix = await invalidar_pix_usuario(user.id)
+    if invalidou_pix:
+        logger.info(f"🗑️ PIX anteriores do usuário {user.id} invalidados no /start")
     
     # Mapeia user_id para chat_id para o ChatJoinRequestHandler
     if 'user_chat_map' not in context.bot_data:
@@ -461,7 +506,17 @@ async def job_etapa4_planos_vip(context: ContextTypes.DEFAULT_TYPE, chat_id_manu
 
     logger.info(f"⏰ ETAPA 4: Enviando planos VIP para {chat_id}.")
     
-    texto_planos = "No VIP você vai ver TUDO sem censura, vídeos completos de mim gozando, chamadas privadas e muito mais!\n\n<b>Escolhe o seu acesso especial:</b>"
+    texto_planos = (
+        "💋 <b>Agora vem a parte gostosa, meu amor...</b>\n\n"
+        "🔥 No meu VIP você vai ter:\n"
+        "• Vídeos completos SEM CENSURA de mim gozando gostoso\n"
+        "• Fotos íntimas que só meus namorados veem\n"
+        "• Chamadas privadas só eu e você\n"
+        "• Conversas quentes no chat privado\n"
+        "• Pack especial de brinquedos (planos maiores)\n"
+        "• Meu WhatsApp pessoal (plano premium)\n\n"
+        "😈 <b>Escolhe como você quer me ter:</b>"
+    )
     keyboard = [[InlineKeyboardButton(p["botao_texto"], callback_data=f"plano:{p['id']}")] for p in VIP_PLANS.values()]
     
     msg = await context.bot.send_message(chat_id=chat_id, text=texto_planos, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
@@ -500,7 +555,15 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
     
     # Remove o job de desconto, pois o usuário já escolheu um plano
     await remove_job_if_exists(f"job_etapa4_desconto_{chat_id}", context)
-    # AGORA SIM deleta mensagens anteriores - chegamos na etapa VIP!
+    
+    # Deleta a mensagem de seleção de planos ao escolher um plano
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=query.message.message_id)
+        logger.info(f"🗑️ Mensagem de seleção de planos deletada para usuário {user_id}")
+    except Exception as e:
+        logger.warning(f"⚠️ Não foi possível deletar mensagem de seleção: {e}")
+    
+    # Deleta outras mensagens anteriores se existirem
     await delete_message_if_exists_bot_data(context, f'etapa4_{chat_id}', chat_id, allow_delete=True)
     
     plano_id = query.data.split(":")[1]
@@ -522,7 +585,7 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
         qr_code_url = pix_existente.get('qr_code') or f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={pix_copia_cola}"
         
         caption = (
-            f"♻️ <b>PIX Reutilizado (Válido por mais {pix_existente.get('tempo_restante', '??')} min)</b>\n\n"
+            f"💎 <b>Seu PIX está aqui, meu amor!</b>\n\n"
             f"📸 <b>Pague utilizando o QR Code</b>\n"
             f"💸 <b>Pague por Pix copia e cola:</b>\n"
             f"<blockquote><code>{escape(pix_copia_cola)}</code></blockquote>"
@@ -539,6 +602,29 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
         
         await context.bot.send_photo(chat_id=chat_id, photo=qr_code_url, caption=caption, 
                                    reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+        
+        # Para PIX reutilizado, agenda timeout baseado no tempo restante
+        tempo_restante_str = pix_existente.get('tempo_restante', '60')
+        try:
+            tempo_restante_min = int(tempo_restante_str.split()[0]) if tempo_restante_str != '??' else 60
+            tempo_restante_sec = tempo_restante_min * 60
+            
+            # Remove job anterior e agenda novo baseado no tempo restante
+            await remove_job_if_exists(f"timeout_pix_{user_id}", context)
+            
+            context.job_queue.run_once(
+                job_timeout_pix, 
+                tempo_restante_sec,
+                chat_id=chat_id,
+                user_id=user_id,
+                data={'plano_id': plano_id},
+                name=f"timeout_pix_{user_id}"
+            )
+            
+            logger.info(f"⏰ Job de timeout PIX reutilizado agendado para usuário {user_id} em {tempo_restante_min} minutos")
+        except Exception as e:
+            logger.error(f"❌ Erro agendando timeout para PIX reutilizado: {e}")
+        
         return
 
     logger.info(f"💳 Gerando PIX NOVO para {user_id} - Plano: {plano_selecionado['nome']}")
@@ -573,7 +659,7 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
         qr_code_url = result.get('qr_code') or f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={pix_copia_cola}"
         
         caption = (
-            f"🆕 <b>PIX Gerado (Válido por 60 minutos)</b>\n\n"
+            f"💎 <b>Seu PIX está aqui, meu amor!</b>\n\n"
             f"📸 <b>Pague utilizando o QR Code</b>\n"
             f"💸 <b>Pague por Pix copia e cola:</b>\n"
             f"<blockquote><code>{escape(pix_copia_cola)}</code></blockquote>"
@@ -591,6 +677,22 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
         await context.bot.send_photo(chat_id=chat_id, photo=qr_code_url, caption=caption, 
                                    reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
         
+        # Agenda job de timeout PIX para 60 minutos (3600 segundos)
+        # Remove qualquer job anterior de timeout PIX deste usuário
+        await remove_job_if_exists(f"timeout_pix_{user_id}", context)
+        
+        # Agenda novo job de timeout
+        context.job_queue.run_once(
+            job_timeout_pix, 
+            3600,  # 60 minutos
+            chat_id=chat_id,
+            user_id=user_id,
+            data={'plano_id': plano_id},
+            name=f"timeout_pix_{user_id}"
+        )
+        
+        logger.info(f"⏰ Job de timeout PIX agendado para usuário {user_id} em 60 minutos")
+        
     except Exception as e:
         logger.error(f"❌ Erro CRÍTICO ao processar pagamento para {user_id}: {e}")
         await msg_loading.edit_text("❌ Um erro inesperado ocorreu. Por favor, tente novamente mais tarde ou escolha outro plano.")
@@ -606,6 +708,10 @@ async def callback_ja_paguei(update: Update, context: ContextTypes.DEFAULT_TYPE)
     plano_id = query.data.split(":")[1] if ":" in query.data else "desconhecido"
     
     logger.info(f"✅ Usuário {user_id} confirmou pagamento do plano {plano_id}")
+    
+    # Remove job de timeout PIX pois o usuário confirmou pagamento
+    await remove_job_if_exists(f"timeout_pix_{user_id}", context)
+    logger.info(f"⏰ Job de timeout PIX cancelado para usuário {user_id} após confirmação de pagamento")
     
     # Mensagem de confirmação
     texto_confirmacao = (
@@ -631,10 +737,9 @@ async def callback_escolher_outro_plano(update: Update, context: ContextTypes.DE
     
     logger.info(f"🔄 Usuário {user_id} quer escolher outro plano")
     
-    # Invalida PIX atual do usuário
-    invalidou = await invalidar_pix_usuario(user_id)
-    if invalidou:
-        logger.info(f"🗑️ PIX anterior do usuário {user_id} invalidado com sucesso")
+    # NÃO invalida PIX atual para não apagar PIX anterior
+    # O usuário pode querer voltar ao PIX que já estava sendo processado
+    logger.info(f"🔄 Usuário {user_id} está escolhendo outro plano (mantendo PIX anterior)")
     
     # Texto motivacional para upgrade
     texto_upgrade = (
