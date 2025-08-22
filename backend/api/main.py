@@ -943,6 +943,111 @@ def get_logs():
     except Exception as e:
         logger.error(f"❌ Erro em get_logs: {e}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/clear-database', methods=['POST'])
+def clear_database():
+    """
+    ENDPOINT TEMPORÁRIO: Limpa todos os dados das tabelas mas mantém a estrutura.
+    Remove apenas os registros, preservando tabelas, colunas, índices, etc.
+    """
+    try:
+        # Verificação de segurança básica
+        auth_header = request.headers.get('Authorization')
+        if auth_header != 'Bearer admin-clear-2025':
+            return jsonify({'success': False, 'error': 'Acesso negado'}), 403
+        
+        if not db:
+            return jsonify({'success': False, 'error': 'Database indisponível'}), 500
+        
+        logger.info("🧹 INICIANDO LIMPEZA COMPLETA DO BANCO DE DADOS")
+        
+        # Lista das tabelas principais de dados (preserva estrutura)
+        tables_to_clear = [
+            'conversion_logs',      # Logs de conversão Xtracky
+            'pix_transactions',     # Transações PIX TriboPay
+            'bot_users',           # Usuários do bot
+            'tracking_mapping',     # Mapeamento de tracking presell
+            'bot_interactions'      # Interações do bot (se existir)
+        ]
+        
+        cleared_tables = []
+        errors = []
+        
+        # Executa TRUNCATE em cada tabela
+        for table in tables_to_clear:
+            try:
+                # Verifica se tabela existe antes de truncar
+                check_query = """
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_schema = 'public' 
+                        AND table_name = %s
+                    );
+                """
+                exists = db.execute_query(check_query, [table])
+                
+                if exists and exists[0]['exists']:
+                    # TRUNCATE CASCADE para lidar com foreign keys
+                    truncate_query = f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE;"
+                    db.execute_query(truncate_query)
+                    cleared_tables.append(table)
+                    logger.info(f"✅ Tabela '{table}' limpa com sucesso")
+                else:
+                    logger.warning(f"⚠️ Tabela '{table}' não existe - ignorando")
+                    
+            except Exception as e:
+                error_msg = f"Erro ao limpar tabela '{table}': {str(e)}"
+                errors.append(error_msg)
+                logger.error(f"❌ {error_msg}")
+        
+        # Verifica estrutura das tabelas após limpeza
+        structure_check = []
+        for table in cleared_tables:
+            try:
+                columns_query = """
+                    SELECT column_name, data_type 
+                    FROM information_schema.columns 
+                    WHERE table_name = %s 
+                    ORDER BY ordinal_position;
+                """
+                columns = db.execute_query(columns_query, [table])
+                structure_check.append({
+                    'table': table,
+                    'columns_count': len(columns) if columns else 0,
+                    'columns': [col['column_name'] for col in columns] if columns else []
+                })
+            except Exception as e:
+                structure_check.append({
+                    'table': table,
+                    'error': str(e)
+                })
+        
+        # Resultado final
+        result = {
+            'success': len(errors) == 0,
+            'message': f'Limpeza concluída: {len(cleared_tables)} tabelas limpas',
+            'cleared_tables': cleared_tables,
+            'errors': errors,
+            'structure_preserved': structure_check,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        if errors:
+            logger.warning(f"⚠️ Limpeza concluída com {len(errors)} erros")
+        else:
+            logger.info("✅ LIMPEZA COMPLETA DO BANCO CONCLUÍDA COM SUCESSO")
+            logger.info(f"📊 Tabelas limpas: {', '.join(cleared_tables)}")
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        error_msg = f"Erro crítico na limpeza do banco: {str(e)}"
+        logger.error(f"❌ {error_msg}")
+        return jsonify({
+            'success': False, 
+            'error': error_msg,
+            'timestamp': datetime.now().isoformat()
+        }), 500
 #================= FECHAMENTO ======================
 
 #======== EXECUÇÃO PRINCIPAL =============
