@@ -3,7 +3,7 @@
 
 class Dashboard {
     constructor() {
-        this.apiUrl = 'https://dashboard-api-production-72a8.up.railway.app'; // URL da API backend
+        this.apiUrl = 'https://api-gateway-production-22bb.up.railway.app'; // URL da API Gateway existente
         this.currentTab = 'overview';
         this.lastUpdate = null;
         this.refreshInterval = null;
@@ -441,10 +441,10 @@ window.addEventListener('beforeunload', () => {
 // Health check da API
 async function checkApiHealth() {
     try {
-        const response = await fetch('https://dashboard-api-production-72a8.up.railway.app/health');
+        const response = await fetch('https://api-gateway-production-22bb.up.railway.app/health');
         const data = await response.json();
         
-        if (data.status === 'healthy') {
+        if (data.status === 'ok') {
             console.log('✅ API Health Check: OK');
         } else {
             console.warn('⚠️ API Health Check: Degraded');
