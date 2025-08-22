@@ -13,6 +13,7 @@ import asyncio
 import json
 import base64
 import httpx
+from datetime import datetime, timedelta
 from html import escape
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaVideo
@@ -90,6 +91,31 @@ http_client = httpx.AsyncClient(
 # ==============================================================================
 # 2. FUNÇÕES AUXILIARES E DE LÓGICA REUTILIZÁVEL
 # ==============================================================================
+
+async def verificar_pix_existente(user_id: int, plano_id: str):
+    #======== VERIFICA SE JÁ EXISTE PIX VÁLIDO PARA O PLANO =============
+    try:
+        response = await http_client.get(f"{API_GATEWAY_URL}/api/pix/verificar/{user_id}/{plano_id}")
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('success') and result.get('pix_valido'):
+                return result.get('pix_data')
+    except Exception as e:
+        logger.error(f"❌ Erro verificando PIX existente: {e}")
+    return None
+    #================= FECHAMENTO ======================
+
+async def invalidar_pix_usuario(user_id: int):
+    #======== INVALIDA TODOS OS PIX PENDENTES DO USUÁRIO =============
+    try:
+        response = await http_client.post(f"{API_GATEWAY_URL}/api/pix/invalidar/{user_id}")
+        if response.status_code == 200:
+            result = response.json()
+            return result.get('success', False)
+    except Exception as e:
+        logger.error(f"❌ Erro invalidando PIX do usuário: {e}")
+    return False
+    #================= FECHAMENTO ======================
 
 async def check_if_user_is_member(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bool:
     #======== VERIFICA SE USUÁRIO JÁ É MEMBRO DO GRUPO =============
@@ -487,11 +513,44 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
         logger.warning(f"⚠️ Plano com id '{plano_id}' não encontrado para o usuário {user_id}.")
         return
 
-    logger.info(f"💳 Gerando PIX para {user_id} - Plano: {plano_selecionado['nome']}")
+    # Verificar se já existe PIX válido para este plano (dentro de 1h)
+    pix_existente = await verificar_pix_existente(user_id, plano_id)
+    if pix_existente:
+        logger.info(f"♻️ Reutilizando PIX existente para {user_id} - Plano: {plano_selecionado['nome']}")
+        
+        pix_copia_cola = pix_existente['pix_copia_cola']
+        qr_code_url = pix_existente.get('qr_code') or f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={pix_copia_cola}"
+        
+        caption = (
+            f"♻️ <b>PIX Reutilizado (Válido por mais {pix_existente.get('tempo_restante', '??')} min)</b>\n\n"
+            f"📸 <b>Pague utilizando o QR Code</b>\n"
+            f"💸 <b>Pague por Pix copia e cola:</b>\n"
+            f"<blockquote><code>{escape(pix_copia_cola)}</code></blockquote>"
+            f"<i>(Clique para copiar)</i>\n"
+            f"🎯 <b>Plano:</b> {escape(plano_selecionado['nome'])}\n"
+            f"💰 <b>Valor: R$ {plano_selecionado['valor']:.2f}</b>"
+        )
+        
+        # Botões de ação
+        keyboard = [
+            [InlineKeyboardButton("✅ JÁ PAGUEI", callback_data=f"ja_paguei:{plano_id}")],
+            [InlineKeyboardButton("🔄 ESCOLHER OUTRO PLANO", callback_data="escolher_outro_plano")]
+        ]
+        
+        await context.bot.send_photo(chat_id=chat_id, photo=qr_code_url, caption=caption, 
+                                   reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+        return
+
+    logger.info(f"💳 Gerando PIX NOVO para {user_id} - Plano: {plano_selecionado['nome']}")
     msg_loading = await context.bot.send_message(chat_id=chat_id, text="💎 Gerando seu PIX... aguarde! ⏳")
     
     try:
-        pix_data = {'user_id': user_id, 'valor': plano_selecionado['valor'], 'plano': plano_selecionado['nome']}
+        pix_data = {
+            'user_id': user_id, 
+            'valor': plano_selecionado['valor'], 
+            'plano': plano_selecionado['nome'],
+            'plano_id': plano_id
+        }
         logger.info(f"🚀 Enviando dados PIX para API: {pix_data}")
         
         response = await http_client.post(f"{API_GATEWAY_URL}/api/pix/gerar", json=pix_data)
@@ -514,6 +573,7 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
         qr_code_url = result.get('qr_code') or f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={pix_copia_cola}"
         
         caption = (
+            f"🆕 <b>PIX Gerado (Válido por 60 minutos)</b>\n\n"
             f"📸 <b>Pague utilizando o QR Code</b>\n"
             f"💸 <b>Pague por Pix copia e cola:</b>\n"
             f"<blockquote><code>{escape(pix_copia_cola)}</code></blockquote>"
@@ -521,10 +581,79 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
             f"🎯 <b>Plano:</b> {escape(plano_selecionado['nome'])}\n"
             f"💰 <b>Valor: R$ {plano_selecionado['valor']:.2f}</b>"
         )
-        await context.bot.send_photo(chat_id=chat_id, photo=qr_code_url, caption=caption, parse_mode='HTML')
+        
+        # Botões de ação
+        keyboard = [
+            [InlineKeyboardButton("✅ JÁ PAGUEI", callback_data=f"ja_paguei:{plano_id}")],
+            [InlineKeyboardButton("🔄 ESCOLHER OUTRO PLANO", callback_data="escolher_outro_plano")]
+        ]
+        
+        await context.bot.send_photo(chat_id=chat_id, photo=qr_code_url, caption=caption, 
+                                   reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+        
     except Exception as e:
         logger.error(f"❌ Erro CRÍTICO ao processar pagamento para {user_id}: {e}")
         await msg_loading.edit_text("❌ Um erro inesperado ocorreu. Por favor, tente novamente mais tarde ou escolha outro plano.")
+    #================= FECHAMENTO ======================
+
+async def callback_ja_paguei(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    #======== HANDLER PARA BOTÃO "JÁ PAGUEI" =============
+    query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat_id
+    user_id = query.from_user.id
+    
+    plano_id = query.data.split(":")[1] if ":" in query.data else "desconhecido"
+    
+    logger.info(f"✅ Usuário {user_id} confirmou pagamento do plano {plano_id}")
+    
+    # Mensagem de confirmação
+    texto_confirmacao = (
+        "🎉 <b>Perfeito, meu amor!</b>\n\n"
+        "Seu pagamento já está sendo processado! ⚡\n\n"
+        "📱 <b>Assim que for aprovado, você receberá:</b>\n"
+        "• Link do grupo VIP\n"
+        "• Acesso completo ao conteúdo\n"
+        "• Instruções para baixar tudo\n\n"
+        "⏰ <i>Geralmente demora apenas alguns minutos...</i>\n\n"
+        "💕 <b>Muito obrigada pela confiança!</b>"
+    )
+    
+    await context.bot.send_message(chat_id=chat_id, text=texto_confirmacao, parse_mode='HTML')
+    #================= FECHAMENTO ======================
+
+async def callback_escolher_outro_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    #======== HANDLER PARA BOTÃO "ESCOLHER OUTRO PLANO" =============
+    query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat_id
+    user_id = query.from_user.id
+    
+    logger.info(f"🔄 Usuário {user_id} quer escolher outro plano")
+    
+    # Invalida PIX atual do usuário
+    invalidou = await invalidar_pix_usuario(user_id)
+    if invalidou:
+        logger.info(f"🗑️ PIX anterior do usuário {user_id} invalidado com sucesso")
+    
+    # Texto motivacional para upgrade
+    texto_upgrade = (
+        "💎 <b>Ótima escolha, amor!</b>\n\n"
+        "Vou te mostrar as opções novamente... mas deixa eu te falar uma coisa: 😏\n\n"
+        "🔥 <b>Quem pega o plano mais completo sempre agradece depois!</b>\n"
+        "• Muito mais conteúdo exclusivo\n"
+        "• Chamadas privadas comigo\n"
+        "• Contato direto no WhatsApp\n"
+        "• Prioridade em tudo\n\n"
+        "💰 <b>E o custo-benefício é MUITO melhor!</b>\n\n"
+        "<b>Qual você quer escolher agora?</b> 👇"
+    )
+    
+    # Mostra todos os planos novamente com texto persuasivo
+    keyboard = [[InlineKeyboardButton(p["botao_texto"], callback_data=f"plano:{p['id']}")] for p in VIP_PLANS.values()]
+    
+    await context.bot.send_message(chat_id=chat_id, text=texto_upgrade, 
+                                 reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
     #================= FECHAMENTO ======================
 
 
@@ -548,6 +677,8 @@ def main():
     application.add_handler(CallbackQueryHandler(callback_trigger_etapa3, pattern='^trigger_etapa3$'))
     application.add_handler(CallbackQueryHandler(callback_trigger_etapa4, pattern='^trigger_etapa4$'))
     application.add_handler(CallbackQueryHandler(callback_processar_plano, pattern='^plano:'))
+    application.add_handler(CallbackQueryHandler(callback_ja_paguei, pattern='^ja_paguei:'))
+    application.add_handler(CallbackQueryHandler(callback_escolher_outro_plano, pattern='^escolher_outro_plano$'))
     
     logger.info("🚀 Bot iniciado com sucesso! Aguardando interações...")
     

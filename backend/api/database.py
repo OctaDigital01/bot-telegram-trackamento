@@ -69,6 +69,7 @@ class DatabaseManager:
                 transaction_id VARCHAR(255) UNIQUE NOT NULL,
                 telegram_id BIGINT NOT NULL,
                 amount DECIMAL(10,2) NOT NULL,
+                plano_id VARCHAR(100),
                 status VARCHAR(50) DEFAULT 'pending',
                 pix_code TEXT,
                 qr_code TEXT,
@@ -190,16 +191,16 @@ class DatabaseManager:
             """, (minutes,))
             return cursor.fetchone()
 
-    def save_pix_transaction(self, transaction_id, telegram_id, amount, tracking_data):
+    def save_pix_transaction(self, transaction_id, telegram_id, amount, tracking_data, plano_id=None):
         """Salvar transação PIX"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO pix_transactions 
-                (transaction_id, telegram_id, amount, click_id, utm_source, utm_medium, utm_campaign, utm_term, utm_content)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (transaction_id, telegram_id, amount, plano_id, click_id, utm_source, utm_medium, utm_campaign, utm_term, utm_content)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
-                transaction_id, telegram_id, amount,
+                transaction_id, telegram_id, amount, plano_id,
                 tracking_data.get('click_id'),
                 tracking_data.get('utm_source'),
                 tracking_data.get('utm_medium'),
@@ -238,6 +239,32 @@ class DatabaseManager:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             cursor.execute("SELECT * FROM pix_transactions WHERE transaction_id = %s", (transaction_id,))
             return cursor.fetchone()
+
+    def get_active_pix(self, telegram_id, plano_id):
+        """Buscar PIX ativo para usuário e plano específico (válido por 1h)"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute("""
+                SELECT * FROM pix_transactions 
+                WHERE telegram_id = %s 
+                AND plano_id = %s 
+                AND status = 'pending' 
+                AND created_at > NOW() - INTERVAL '1 hour'
+                ORDER BY created_at DESC 
+                LIMIT 1
+            """, (telegram_id, plano_id))
+            return cursor.fetchone()
+    
+    def invalidate_user_pix(self, telegram_id):
+        """Invalida todos os PIX pendentes do usuário"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE pix_transactions 
+                SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP 
+                WHERE telegram_id = %s AND status = 'pending'
+            """, (telegram_id,))
+            return cursor.rowcount
 
     def log_conversion(self, transaction_id, click_id, utm_source, utm_campaign, conversion_value, status, xtracky_response):
         """Log de conversão para Xtracky"""

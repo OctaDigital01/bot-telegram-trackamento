@@ -55,7 +55,7 @@ def index():
         'status': 'ok',
         'service': 'API Gateway - Bot Telegram Tracking',
         'version': '1.0',
-        'endpoints': ['/health', '/api/users', '/api/tracking/get/<id>', '/api/pix/gerar', '/webhook/tribopay']
+        'endpoints': ['/health', '/api/users', '/api/tracking/get/<id>', '/api/pix/gerar', '/api/pix/verificar/<user_id>/<plano_id>', '/api/pix/invalidar/<user_id>', '/webhook/tribopay']
     })
 
 @app.route('/api/users', methods=['POST'])
@@ -203,6 +203,60 @@ def get_latest_tracking():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/pix/verificar/<user_id>/<plano_id>', methods=['GET'])
+def verificar_pix_existente(user_id, plano_id):
+    """Verifica se existe PIX válido para o usuário e plano"""
+    try:
+        if db:
+            # Busca PIX ativo do usuário para o plano específico (válido por 1h)
+            pix_data = db.get_active_pix(int(user_id), plano_id)
+            if pix_data:
+                # Calcula tempo restante
+                from datetime import datetime, timedelta
+                created_at = pix_data.get('created_at')
+                if created_at:
+                    if isinstance(created_at, str):
+                        created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    
+                    expire_time = created_at + timedelta(hours=1)
+                    now = datetime.now()
+                    if isinstance(created_at, datetime) and created_at.tzinfo:
+                        now = datetime.now(created_at.tzinfo)
+                    
+                    if now < expire_time:
+                        tempo_restante = int((expire_time - now).total_seconds() / 60)
+                        return jsonify({
+                            'success': True,
+                            'pix_valido': True,
+                            'tempo_restante': max(tempo_restante, 1),
+                            'pix_data': {
+                                'pix_copia_cola': pix_data.get('pix_code'),
+                                'qr_code': pix_data.get('qr_code'),
+                                'transaction_id': pix_data.get('transaction_id')
+                            }
+                        })
+            
+            return jsonify({'success': True, 'pix_valido': False})
+        else:
+            return jsonify({'success': False, 'error': 'Database not available'}), 500
+    except Exception as e:
+        logger.error(f"❌ Erro verificando PIX existente: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/pix/invalidar/<user_id>', methods=['POST'])
+def invalidar_pix_usuario(user_id):
+    """Invalida todos os PIX pendentes do usuário"""
+    try:
+        if db:
+            result = db.invalidate_user_pix(int(user_id))
+            logger.info(f"🗑️ PIX do usuário {user_id} invalidados: {result}")
+            return jsonify({'success': True, 'invalidated': result})
+        else:
+            return jsonify({'success': False, 'error': 'Database not available'}), 500
+    except Exception as e:
+        logger.error(f"❌ Erro invalidando PIX do usuário: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/pix/gerar', methods=['POST'])
 def gerar_pix():
     """Gera PIX via TriboPay"""
@@ -211,6 +265,7 @@ def gerar_pix():
         user_id = data.get('user_id')
         valor = data.get('valor', 10.0)
         plano = data.get('plano', 'VIP')
+        plano_id = data.get('plano_id', 'default')  # ID do plano para cache
         
         # Busca dados do usuário no PostgreSQL
         if db:
@@ -370,18 +425,20 @@ def gerar_pix():
             qr_code = None
             tribopay_data = {"fallback": True, "error": str(tribopay_error)}
         
-        # Salva transação no PostgreSQL
+        # Salva transação no PostgreSQL com plano_id para cache
         if db:
             db.save_pix_transaction(
                 transaction_id=transaction_id,
                 telegram_id=int(user_id),
                 amount=valor,
-                tracking_data=tracking_data
+                tracking_data=tracking_data,
+                plano_id=plano_id  # Adiciona plano_id para sistema de cache
             )
             db.update_pix_transaction(
                 transaction_id=transaction_id,
                 status='pending',
-                pix_code=pix_code
+                pix_code=pix_code,
+                qr_code=qr_code  # Salva QR code também
             )
         else:
             return jsonify({'success': False, 'error': 'Database not available'}), 500
