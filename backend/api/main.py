@@ -8,6 +8,8 @@ import os
 import logging
 import json
 import requests
+import random
+import hashlib
 from datetime import datetime
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -121,15 +123,10 @@ def gerar_pix():
         if not all([user_id, valor, plano_id]):
             return jsonify({'success': False, 'error': 'Campos obrigatórios ausentes: user_id, valor, plano_id'}), 400
 
-        # Se customer_data não foi fornecido, gera dados genéricos baseados no user_id
+        # Se customer_data não foi fornecido, gera dados únicos realistas
         if not customer_data:
-            customer_data = {
-                'name': f'Usuario {user_id}',
-                'email': f'user{user_id}@telegram.bot',
-                'document': f'{user_id:011d}'[-11:],  # Usa últimos 11 dígitos do user_id como CPF
-                'phone_number': f'11{user_id:09d}'[-11:]  # Gera número de telefone fictício
-            }
-            logger.info(f"🔧 Dados de customer gerados automaticamente para user_id {user_id}")
+            customer_data = generate_unique_customer_data(user_id)
+            logger.info(f"🎲 Dados únicos gerados para user_id {user_id}")
         else:
             # Valida campos obrigatórios apenas se customer_data foi fornecido
             required_customer_fields = ['name', 'email', 'document', 'phone_number']
@@ -436,6 +433,82 @@ def verificar_pix_existente(user_id, plano_id):
     except Exception as e:
         logger.error(f"❌ Erro ao verificar PIX do usuário {user_id}: {e}")
         return jsonify({'success': False, 'error': 'Erro interno do servidor'}), 500
+#================= FECHAMENTO ======================
+
+#======== SISTEMA DE GERAÇÃO DE DADOS ÚNICOS =============
+def generate_unique_customer_data(user_id):
+    """Gera dados únicos de cliente para PIX - nunca repete"""
+    
+    # Listas de nomes brasileiros comuns
+    primeiros_nomes = [
+        "Ana", "Maria", "João", "Pedro", "Lucas", "Gabriel", "Rafael", "Daniel", "Bruno", "Felipe",
+        "Fernanda", "Juliana", "Camila", "Amanda", "Beatriz", "Carolina", "Larissa", "Mariana",
+        "André", "Diego", "Marcos", "Thiago", "Rodrigo", "Mateus", "Gustavo", "Ricardo",
+        "Patrícia", "Renata", "Sandra", "Vanessa", "Claudia", "Mônica", "Silvia", "Adriana",
+        "Carlos", "Fernando", "Eduardo", "Marcelo", "Paulo", "Roberto", "Leonardo", "Vinicius"
+    ]
+    
+    sobrenomes = [
+        "Silva", "Santos", "Oliveira", "Souza", "Lima", "Ferreira", "Costa", "Pereira", "Almeida",
+        "Martins", "Araújo", "Melo", "Barbosa", "Ribeiro", "Monteiro", "Cardoso", "Carvalho",
+        "Gomes", "Nascimento", "Moreira", "Reis", "Freitas", "Campos", "Cunha", "Pinto", "Farias",
+        "Batista", "Vieira", "Mendes", "Castro", "Rocha", "Dias", "Moura", "Correia", "Teixeira"
+    ]
+    
+    # Usa user_id + timestamp para garantir unicidade
+    import time
+    seed = int(str(user_id) + str(int(time.time() * 1000))[-6:])
+    random.seed(seed)
+    
+    # Gera nome único
+    primeiro = random.choice(primeiros_nomes)
+    sobrenome = random.choice(sobrenomes)
+    nome_completo = f"{primeiro} {sobrenome}"
+    
+    # Gera CPF válido único
+    def gerar_cpf():
+        # Gera 9 primeiros dígitos
+        cpf = [random.randint(0, 9) for _ in range(9)]
+        
+        # Calcula primeiro dígito verificador
+        soma = sum(cpf[i] * (10 - i) for i in range(9))
+        digito1 = (soma * 10 % 11) % 10
+        cpf.append(digito1)
+        
+        # Calcula segundo dígito verificador
+        soma = sum(cpf[i] * (11 - i) for i in range(10))
+        digito2 = (soma * 10 % 11) % 10
+        cpf.append(digito2)
+        
+        return ''.join(map(str, cpf))
+    
+    # Gera telefone celular válido
+    def gerar_telefone():
+        # DDD válidos brasileiros
+        ddds = ['11', '12', '13', '14', '15', '16', '17', '18', '19', '21', '22', '24', '27', '28',
+                '31', '32', '33', '34', '35', '37', '38', '41', '42', '43', '44', '45', '46', '47',
+                '48', '49', '51', '53', '54', '55', '61', '62', '63', '64', '65', '66', '67', '68',
+                '69', '71', '73', '74', '75', '77', '79', '81', '82', '83', '84', '85', '86', '87',
+                '88', '89', '91', '92', '93', '94', '95', '96', '97', '98', '99']
+        
+        ddd = random.choice(ddds)
+        # Celular sempre começa com 9
+        numero = '9' + ''.join([str(random.randint(0, 9)) for _ in range(8)])
+        return f"{ddd}{numero}"
+    
+    cpf = gerar_cpf()
+    telefone = gerar_telefone()
+    email_base = primeiro.lower() + sobrenome.lower()
+    email = f"{email_base}{random.randint(100, 999)}@email.com"
+    
+    logger.info(f"🎲 Dados únicos gerados para user {user_id}: {nome_completo}, CPF: {cpf[:3]}***")
+    
+    return {
+        'name': nome_completo,
+        'email': email,
+        'document': cpf,
+        'phone_number': telefone
+    }
 #================= FECHAMENTO ======================
 
 #======== FUNÇÃO DE CONVERSÃO XTRACKY =============

@@ -287,8 +287,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     context.user_data['chat_id'] = chat_id
     
-    if await invalidar_pix_usuario(user.id):
-        logger.info(f"🗑️ PIX anteriores do usuário {user.id} invalidados no /start")
+    # Nota: PIX só deve ser invalidado quando usuário realmente gerar novo PIX
+    # Não há necessidade de invalidar a cada /start
     
     if 'user_chat_map' not in context.bot_data:
         context.bot_data['user_chat_map'] = {}
@@ -633,8 +633,20 @@ async def main():
     global _BOT_INSTANCE
     
     if _BOT_INSTANCE:
-        logger.warning("⚠️ Bot já está rodando, abortando nova instância.")
-        return
+        logger.warning("⚠️ Bot já está rodando, encerrando instância anterior...")
+        try:
+            old_instance = _BOT_INSTANCE
+            if hasattr(old_instance, 'updater') and old_instance.updater and old_instance.updater.is_running():
+                await old_instance.updater.stop()
+            if hasattr(old_instance, 'stop'):
+                await old_instance.stop()
+            if hasattr(old_instance, 'shutdown'):
+                await old_instance.shutdown()
+        except Exception as e:
+            logger.error(f"❌ Erro ao encerrar instância anterior: {e}")
+        _BOT_INSTANCE = None
+        # Aguarda um pouco antes de iniciar nova instância
+        await asyncio.sleep(2)
     
     required_vars = ['TELEGRAM_BOT_TOKEN', 'API_GATEWAY_URL', 'GRUPO_GRATIS_ID', 'GRUPO_GRATIS_INVITE_LINK']
     if any(not os.getenv(var) for var in required_vars):
