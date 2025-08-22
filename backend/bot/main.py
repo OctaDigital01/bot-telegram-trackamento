@@ -545,7 +545,12 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
 async def enviar_mensagem_pix(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int, plano: dict, pix_data: dict, is_reused: bool = False):
     #======== ENVIA A MENSAGEM COM O QR CODE E DADOS DO PIX =============
     pix_copia_cola = pix_data['pix_copia_cola']
-    qr_code_url = pix_data.get('qr_code') or f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={pix_copia_cola}"
+    
+    # CORREÇÃO CRÍTICA: TriboPay retorna URL incompatível com Telegram
+    # Sempre gera QR Code via serviço externo que retorna imagem PNG
+    from urllib.parse import quote
+    qr_code_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={quote(pix_copia_cola)}"
+    logger.info(f"🔲 QR Code gerado: {qr_code_url[:80]}...")
     
     caption = (
         f"💎 <b>Seu PIX está aqui, meu amor!</b>\n\n"
@@ -563,9 +568,21 @@ async def enviar_mensagem_pix(context: ContextTypes.DEFAULT_TYPE, chat_id: int, 
     
     try:
         await context.bot.send_photo(chat_id=chat_id, photo=qr_code_url, caption=caption, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+        logger.info(f"✅ QR Code PIX enviado com sucesso para {user_id}")
     except Exception as e:
-        logger.error(f"❌ Falha ao enviar foto do QR Code para {user_id}: {e}. Enviando fallback.")
-        await context.bot.send_message(chat_id=chat_id, text=caption, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+        logger.error(f"❌ Falha ao enviar foto do QR Code para {user_id}: {e}. Enviando fallback com QR Code inline.")
+        
+        # Fallback: Envia mensagem de texto com QR Code como link
+        caption_fallback = (
+            f"💎 <b>Seu PIX está aqui, meu amor!</b>\n\n"
+            f"📸 <b>QR Code:</b> <a href='{qr_code_url}'>Clique aqui para ver o QR Code</a>\n\n"
+            f"💸 <b>Pague por Pix copia e cola:</b>\n"
+            f"<blockquote><code>{escape(pix_copia_cola)}</code></blockquote>"
+            f"<i>(Clique para copiar)</i>\n\n"
+            f"🎯 <b>Plano:</b> {escape(plano['nome'])}\n"
+            f"💰 <b>Valor: R$ {plano['valor']:.2f}</b>"
+        )
+        await context.bot.send_message(chat_id=chat_id, text=caption_fallback, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
     # Agenda o job de timeout
     await remove_job_if_exists(f"timeout_pix_{user_id}", context)

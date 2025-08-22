@@ -141,7 +141,12 @@ def gerar_pix():
         user_data = db.get_user(int(user_id))
         if user_data:
             tracking_data = user_data.get('tracking_data', {})
-            logger.info(f"🎯 Tracking encontrado para usuário {user_id}.")
+            logger.info(f"🎯 Tracking encontrado para usuário {user_id}: {tracking_data}")
+            
+            # Log detalhado dos dados de tracking para debug
+            click_id = tracking_data.get('click_id')
+            utm_source = tracking_data.get('utm_source')
+            logger.info(f"📊 Dados tracking PIX - click_id: {click_id}, utm_source: {utm_source}")
         else:
             logger.warning(f"⚠️ Usuário {user_id} não encontrado no banco. Tracking não será enviado.")
 
@@ -532,9 +537,22 @@ def send_conversion_to_xtracky(transaction_id):
             
         # Busca click_id diretamente da transação (está armazenado como campo separado)
         click_id = transaction.get('click_id')
+        tracking_data = transaction.get('tracking_data', {})
+        
+        # Debug: Log detalhado dos dados de tracking da transação
+        logger.info(f"🔍 Dados transação {transaction_id}:")
+        logger.info(f"   - click_id direto: {click_id}")
+        logger.info(f"   - tracking_data: {tracking_data}")
+        logger.info(f"   - tracking_data.click_id: {tracking_data.get('click_id') if isinstance(tracking_data, dict) else 'N/A'}")
+        
+        # Fallback: se click_id não está direto, tenta extrair do tracking_data
+        if not click_id and isinstance(tracking_data, dict):
+            click_id = tracking_data.get('click_id')
+            logger.info(f"🔄 Usando click_id do tracking_data: {click_id}")
         
         if not click_id:
             logger.warning(f"⚠️ Transação {transaction_id} sem click_id - conversão não enviada")
+            logger.warning(f"   Dados disponíveis: {list(transaction.keys())}")
             return False
             
         # Dados da conversão para Xtracky
