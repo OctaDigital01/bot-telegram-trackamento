@@ -3,7 +3,7 @@
 
 class Dashboard {
     constructor() {
-        this.apiUrl = 'https://api-gateway-production-22bb.up.railway.app'; // URL da API Gateway existente
+        this.apiUrl = 'https://api-gateway-production-22bb.up.railway.app'; // API Gateway correta - atualizada 22/08/2025
         this.currentTab = 'overview';
         this.lastUpdate = null;
         this.refreshInterval = null;
