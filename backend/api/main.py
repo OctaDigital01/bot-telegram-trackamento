@@ -364,7 +364,7 @@ def gerar_pix():
             # Criar a transação PIX usando produto do cache
             valor_centavos = int(valor * 100)
             
-            # Payload simplificado usando offer_hash fixo
+            # Payload com offer_hash fixo e cart obrigatório
             tribopay_payload = {
                 "amount": valor_centavos,
                 "offer_hash": offer_hash,  # OBRIGATÓRIO - hash da oferta fixa
@@ -375,6 +375,16 @@ def gerar_pix():
                     "phone_number": "11999999999",
                     "document": "00000000000"
                 },
+                "cart": [
+                    {
+                        "offer_hash": offer_hash,
+                        "title": f"Plano VIP - R$ {valor:.2f}",
+                        "price": valor_centavos,
+                        "quantity": 1,
+                        "operation_type": 1,
+                        "tangible": False
+                    }
+                ],
                 "expire_in_days": 1,  # Mínimo da API
                 "transaction_origin": "api",
                 "installments": 1,  # OBRIGATÓRIO para PIX
