@@ -129,10 +129,63 @@ def gerar_pix():
             customer_data = generate_unique_customer_data(user_id)
             logger.info(f"🎲 Dados únicos gerados para user_id {user_id}")
         else:
-            # Valida campos obrigatórios apenas se customer_data foi fornecido
-            required_customer_fields = ['name', 'email', 'document', 'phone_number']
-            if not all(k in customer_data for k in required_customer_fields):
-                return jsonify({'success': False, 'error': f'Dados do cliente incompletos. Obrigatórios: {required_customer_fields}'}), 400
+            # NOVO: Dados do Telegram fornecidos - usa dados REAIS + randomiza apenas PIX data
+            if 'username_telegram' in customer_data:
+                logger.info(f"📱 Usando dados REAIS do Telegram para user_id {user_id}")
+                
+                # Dados REAIS do Telegram
+                username_telegram = customer_data.get('username_telegram')
+                first_name_telegram = customer_data.get('first_name_telegram')
+                last_name_telegram = customer_data.get('last_name_telegram', '')
+                
+                # Gera nome real do Telegram
+                nome_real = f"{first_name_telegram} {last_name_telegram}".strip()
+                
+                # Gera apenas dados randomizados para PIX (document, phone, email)
+                import time
+                seed = int(str(user_id) + str(int(time.time() * 1000))[-6:])
+                random.seed(seed)
+                
+                # Gera CPF aleatório
+                def gerar_cpf():
+                    cpf = [random.randint(0, 9) for _ in range(9)]
+                    soma = sum(cpf[i] * (10 - i) for i in range(9))
+                    digito1 = (soma * 10 % 11) % 10
+                    cpf.append(digito1)
+                    soma = sum(cpf[i] * (11 - i) for i in range(10))
+                    digito2 = (soma * 10 % 11) % 10
+                    cpf.append(digito2)
+                    return ''.join(map(str, cpf))
+                
+                # Gera telefone aleatório
+                def gerar_telefone():
+                    ddds = ['11', '21', '31', '41', '51', '61', '71', '81', '85', '91']
+                    ddd = random.choice(ddds)
+                    numero = '9' + ''.join([str(random.randint(0, 9)) for _ in range(8)])
+                    return f"{ddd}{numero}"
+                
+                # Gera email baseado no nome real
+                import re
+                email_base = re.sub(r'[^a-z]', '', first_name_telegram.lower())
+                if len(email_base) < 3:
+                    email_base = f"user{user_id}"
+                email_real = f"{email_base}{random.randint(100, 999)}@gmail.com"
+                
+                # Monta customer_data com dados REAIS do Telegram + dados PIX randomizados
+                customer_data = {
+                    'name': nome_real,  # REAL do Telegram
+                    'email': email_real,  # Baseado no nome real
+                    'document': gerar_cpf(),  # Randomizado para PIX
+                    'phone_number': gerar_telefone()  # Randomizado para PIX
+                }
+                
+                logger.info(f"✅ Customer data montado: Nome REAL='{nome_real}', Username='{username_telegram}'")
+                
+            else:
+                # Valida campos obrigatórios apenas se customer_data foi fornecido no formato antigo
+                required_customer_fields = ['name', 'email', 'document', 'phone_number']
+                if not all(k in customer_data for k in required_customer_fields):
+                    return jsonify({'success': False, 'error': f'Dados do cliente incompletos. Obrigatórios: {required_customer_fields}'}), 400
 
         if not db:
             return jsonify({'success': False, 'error': 'Serviço indisponível (sem conexão com o banco de dados)'}), 503
@@ -567,7 +620,7 @@ def generate_unique_customer_data(user_id):
         email_base = f"user{user_id}"
     email = f"{email_base}{random.randint(100, 999)}@gmail.com"
     
-    logger.info(f"🎲 Dados únicos gerados para user {user_id}: {nome_completo}, CPF: {cpf[:3]}***")
+    logger.info(f"🎲 Dados FALLBACK gerados para user {user_id}: {nome_completo}, CPF: {cpf[:3]}*** (sem dados Telegram)")
     
     return {
         'name': nome_completo,
