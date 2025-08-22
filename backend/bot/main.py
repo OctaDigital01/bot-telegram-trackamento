@@ -428,7 +428,8 @@ async def job_etapa3_galeria(context: ContextTypes.DEFAULT_TYPE, chat_id_manual=
     chat_id = chat_id_manual or context.job.data['chat_id']
     logger.info(f"⏰ ETAPA 3: Enviando galeria de mídias para {chat_id}.")
     
-    await delete_previous_message(context, 'etapa2_msg', chat_id)
+    # Comentado para manter mensagem anterior visível
+    # await delete_previous_message(context, 'etapa2_msg', chat_id)
     
     media_group = [
         InputMediaVideo(media=MEDIA_VIDEO_QUENTE),
