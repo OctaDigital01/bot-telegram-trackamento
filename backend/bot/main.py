@@ -3,6 +3,7 @@
 Bot Telegram - Funil de Vendas com Tracking Completo
 Conecta com API Gateway
 Versão com Fluxo de Funil, Remarketing e Aprovação Automática no Grupo
+Token Fix: 22/08/2025
 """
 
 import os
