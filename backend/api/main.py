@@ -364,10 +364,9 @@ def gerar_pix():
             # Criar a transação PIX usando produto do cache
             valor_centavos = int(valor * 100)
             
-            # Payload com offer_hash fixo e cart obrigatório
+            # Payload com offer_hash fixo (preço já definido na oferta)
             tribopay_payload = {
-                "amount": valor_centavos,
-                "offer_hash": offer_hash,  # OBRIGATÓRIO - hash da oferta fixa
+                "offer_hash": offer_hash,  # OBRIGATÓRIO - hash da oferta fixa (preço incluído)
                 "payment_method": "pix",  # OBRIGATÓRIO
                 "customer": {
                     "name": user_data.get('first_name', 'Cliente') if user_data else 'Cliente',
