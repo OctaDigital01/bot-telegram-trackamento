@@ -498,8 +498,13 @@ def generate_unique_customer_data(user_id):
     
     cpf = gerar_cpf()
     telefone = gerar_telefone()
-    email_base = primeiro.lower() + sobrenome.lower()
-    email = f"{email_base}{random.randint(100, 999)}@email.com"
+    
+    # Gera email seguro removendo acentos e caracteres especiais
+    import re
+    email_base = re.sub(r'[^a-z]', '', primeiro.lower() + sobrenome.lower())
+    if len(email_base) < 3:  # Fallback se nome muito curto
+        email_base = f"user{user_id}"
+    email = f"{email_base}{random.randint(100, 999)}@gmail.com"
     
     logger.info(f"🎲 Dados únicos gerados para user {user_id}: {nome_completo}, CPF: {cpf[:3]}***")
     

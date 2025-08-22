@@ -522,9 +522,11 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
         msg_loading = await context.bot.send_message(chat_id=chat_id, text="💎 Gerando seu PIX... aguarde! ⏳")
         context.user_data['loading_msg'] = msg_loading.message_id
         try:
+            # Não envia customer - deixa a API gerar dados únicos automaticamente
             pix_data = {
-                'user_id': user_id, 'valor': plano_selecionado['valor'], 'plano_id': plano_id,
-                'customer': {'name': query.from_user.full_name, 'email': f'user{user_id}@telegram.bot'}
+                'user_id': user_id, 
+                'valor': plano_selecionado['valor'], 
+                'plano_id': plano_id
             }
             response = await http_client.post(f"{API_GATEWAY_URL}/api/pix/gerar", json=pix_data)
             response.raise_for_status()
