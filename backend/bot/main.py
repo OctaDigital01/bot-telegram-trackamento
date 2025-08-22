@@ -78,10 +78,10 @@ TODOS_OS_PLANOS = {**VIP_PLANS, **REMARKETING_PLANS}
 # ======== CONFIGURAÇÃO DE DELAYS (NOVOS TEMPOS) =============
 CONFIGURACAO_BOT = {
     "DELAYS": {
-        "ETAPA_1_FALLBACK": 20,         # (20s) Se não clicar para entrar no grupo
-        "ETAPA_2_FALLBACK": 20,         # (20s) Se não clicar para ver prévia
-        "ETAPA_3_FALLBACK": 40,         # (40s) Se não clicar no "QUERO O VIP", envia remarketing
-        "ETAPA_4_FALLBACK": 60,         # (1min) Se não escolher plano, envia desconto
+        "ETAPA_1_FALLBACK": 30,         # (30s) Se não clicar para entrar no grupo
+        "ETAPA_2_FALLBACK": 60,         # (60s) Se não clicar para ver prévia
+        "ETAPA_3_FALLBACK": 200,         # (3m) Se não clicar no "QUERO O VIP", envia remarketing
+        "ETAPA_4_FALLBACK": 300,         # (5m) Se não escolher plano, envia desconto
         "APROVACAO_GRUPO_BG": 40,       # (40s) Tempo para aprovar a entrada no grupo em background
         "PIX_TIMEOUT": 3600,            # (60min) Tempo para expirar o PIX
     }
@@ -142,13 +142,26 @@ async def delete_previous_message(context: ContextTypes.DEFAULT_TYPE, message_ke
 async def verificar_pix_existente(user_id: int, plano_id: str):
     #======== VERIFICA SE JÁ EXISTE PIX VÁLIDO PARA O PLANO =============
     try:
+        logger.info(f"🔍 VERIFICANDO PIX EXISTENTE: user_id={user_id}, plano_id={plano_id}")
         response = await http_client.get(f"{API_GATEWAY_URL}/api/pix/verificar/{user_id}/{plano_id}")
+        logger.info(f"📡 Response status: {response.status_code}")
+        
         if response.status_code == 200:
             result = response.json()
+            logger.info(f"📦 Response data: {result}")
+            
             if result.get('success') and result.get('pix_valido'):
-                return result.get('pix_data')
+                pix_data = result.get('pix_data')
+                logger.info(f"✅ PIX VÁLIDO ENCONTRADO: {pix_data.get('transaction_id') if pix_data else 'None'}")
+                return pix_data
+            else:
+                logger.info(f"❌ PIX NÃO VÁLIDO: success={result.get('success')}, pix_valido={result.get('pix_valido')}")
+        else:
+            logger.error(f"❌ Erro HTTP ao verificar PIX: {response.status_code} - {response.text}")
     except Exception as e:
         logger.error(f"❌ Erro verificando PIX existente: {e}")
+    
+    logger.info(f"🚫 RETORNANDO NONE - Nenhum PIX válido para user {user_id}, plano {plano_id}")
     return None
     #================= FECHAMENTO ======================
 

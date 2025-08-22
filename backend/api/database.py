@@ -334,29 +334,36 @@ class DatabaseManager:
                 plano_id_exists = cursor.fetchone()
                 
                 if plano_id_exists:
-                    # Se a coluna existe, usa query com plano_id
+                    # CORREÇÃO: Busca PIX válidos (pending OU waiting_payment) para plano específico
                     cursor.execute("""
                         SELECT * FROM pix_transactions 
                         WHERE telegram_id = %s 
                         AND plano_id = %s 
-                        AND status = 'pending' 
+                        AND status IN ('pending', 'waiting_payment') 
                         AND created_at > NOW() - INTERVAL '1 hour'
                         ORDER BY created_at DESC 
                         LIMIT 1
                     """, (telegram_id, plano_id))
+                    logger.info(f"🔍 Buscando PIX para user {telegram_id}, plano {plano_id} (com coluna plano_id)")
                 else:
-                    # Fallback: busca apenas por telegram_id (sem filtro de plano)
-                    logger.warning("⚠️ Coluna plano_id não existe - usando fallback")
+                    # CORREÇÃO: Mesmo sem coluna plano_id, busca status corretos
+                    logger.warning("⚠️ Coluna plano_id não existe - usando fallback SEM filtro de plano")
                     cursor.execute("""
                         SELECT * FROM pix_transactions 
                         WHERE telegram_id = %s 
-                        AND status = 'pending' 
+                        AND status IN ('pending', 'waiting_payment') 
                         AND created_at > NOW() - INTERVAL '1 hour'
                         ORDER BY created_at DESC 
                         LIMIT 1
                     """, (telegram_id,))
                 
-                return cursor.fetchone()
+                result = cursor.fetchone()
+                if result:
+                    logger.info(f"✅ PIX ativo encontrado: {result.get('transaction_id')} - Status: {result.get('status')}")
+                else:
+                    logger.info(f"❌ Nenhum PIX ativo encontrado para user {telegram_id}, plano {plano_id}")
+                
+                return result
                 
             except Exception as e:
                 logger.error(f"❌ Erro em get_active_pix: {e}")

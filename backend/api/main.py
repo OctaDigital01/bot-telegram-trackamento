@@ -408,16 +408,23 @@ def get_tracking(safe_id):
 def verificar_pix_existente(user_id, plano_id):
     """Verifica se existe PIX válido para o usuário e plano."""
     try:
+        logger.info(f"🔍 ENDPOINT VERIFICAR PIX: user_id={user_id}, plano_id={plano_id}")
+        
         if not db:
+            logger.error("❌ Database não disponível")
             return jsonify({'success': False, 'error': 'Serviço indisponível (sem conexão com o banco de dados)'}), 503
         
         # Busca PIX válido para o usuário e plano
+        logger.info(f"📡 Chamando db.get_valid_pix({user_id}, {plano_id})")
         pix_data = db.get_valid_pix(user_id, plano_id)
+        logger.info(f"📦 Resultado db.get_valid_pix: {pix_data}")
         
         if pix_data:
             # Calcula tempo restante
             from datetime import datetime, timedelta
             created_at = pix_data.get('created_at')
+            logger.info(f"⏰ PIX created_at: {created_at} (tipo: {type(created_at)})")
+            
             if isinstance(created_at, str):
                 created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
             
@@ -425,19 +432,24 @@ def verificar_pix_existente(user_id, plano_id):
                 expire_time = created_at + timedelta(hours=1)
                 now = datetime.now(created_at.tzinfo) if created_at.tzinfo else datetime.now()
                 tempo_restante = expire_time - now
+                logger.info(f"⏰ Tempo restante calculado: {tempo_restante.total_seconds()} segundos")
                 
                 if tempo_restante.total_seconds() > 0:
                     tempo_min = int(tempo_restante.total_seconds() / 60)
                     pix_data['tempo_restante'] = f"{tempo_min} minutos"
                     
-                    logger.info(f"✅ PIX válido encontrado para usuário {user_id}, plano {plano_id}")
+                    logger.info(f"✅ PIX VÁLIDO encontrado para usuário {user_id}, plano {plano_id} - {tempo_min} min restantes")
                     return jsonify({
                         'success': True,
                         'pix_valido': True,
                         'pix_data': pix_data
                     })
+                else:
+                    logger.info(f"⏰ PIX EXPIRADO para usuário {user_id}, plano {plano_id}")
+            else:
+                logger.warning(f"⚠️ PIX sem created_at válido para usuário {user_id}")
         
-        logger.info(f"⚠️ Nenhum PIX válido encontrado para usuário {user_id}, plano {plano_id}")
+        logger.info(f"❌ Nenhum PIX válido encontrado para usuário {user_id}, plano {plano_id}")
         return jsonify({
             'success': True,
             'pix_valido': False,
@@ -445,7 +457,7 @@ def verificar_pix_existente(user_id, plano_id):
         })
         
     except Exception as e:
-        logger.error(f"❌ Erro ao verificar PIX do usuário {user_id}: {e}")
+        logger.error(f"❌ Erro ao verificar PIX do usuário {user_id}: {e}", exc_info=True)
         return jsonify({'success': False, 'error': 'Erro interno do servidor'}), 500
 #================= FECHAMENTO ======================
 
