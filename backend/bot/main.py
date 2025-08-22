@@ -178,6 +178,19 @@ async def delete_message_if_exists(context: ContextTypes.DEFAULT_TYPE, key: str)
                 del context.user_data[key] # Limpa a chave após a tentativa
     #================= FECHAMENTO ======================
 
+async def delete_message_if_exists_bot_data(context: ContextTypes.DEFAULT_TYPE, key: str, chat_id: int):
+    #======== DELETA MENSAGEM ANTERIOR USANDO bot_data =============
+    if 'message_ids' in context.bot_data and key in context.bot_data['message_ids']:
+        message_id = context.bot_data['message_ids'][key]
+        if message_id:
+            try:
+                await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+            except BadRequest as e:
+                logger.warning(f"⚠️ Não foi possível deletar a mensagem {message_id} no chat {chat_id}: {e}")
+            finally:
+                del context.bot_data['message_ids'][key] # Limpa a chave após a tentativa
+    #================= FECHAMENTO ======================
+
 # ==============================================================================
 # 3. LÓGICA DO FUNIL DE VENDAS (POR ETAPA)
 # ==============================================================================
@@ -289,14 +302,17 @@ async def approve_user_callback(context: ContextTypes.DEFAULT_TYPE):
 async def job_etapa2_prompt_previa(context: ContextTypes.DEFAULT_TYPE):
     #======== ENVIA PERGUNTA SOBRE PRÉVIAS =============
     chat_id = context.job.chat_id
-    context.user_data['chat_id'] = chat_id # Garante que o chat_id está no user_data
     
     logger.info(f"⏰ ETAPA 2: Enviando prompt de prévia para {chat_id}.")
     text = "Quer ver um pedacinho do que te espera... 🔥 (É DE GRAÇA!!!) ⬇️"
     keyboard = [[InlineKeyboardButton("QUERO VER UMA PRÉVIA 🔥🥵", callback_data='trigger_etapa3')]]
     
     msg = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
-    context.user_data['etapa2_msg_id'] = msg.message_id
+    
+    # Salva o ID da mensagem no bot_data para poder deletar depois
+    if 'message_ids' not in context.bot_data:
+        context.bot_data['message_ids'] = {}
+    context.bot_data['message_ids'][f'etapa2_{chat_id}'] = msg.message_id
     
     # Agenda a próxima etapa (fallback)
     context.job_queue.run_once(job_etapa3_galeria, CONFIGURACAO_BOT["DELAYS"]["ETAPA_2_FALLBACK"], chat_id=chat_id, name=f"job_etapa3_{chat_id}")
@@ -320,10 +336,11 @@ async def callback_trigger_etapa3(update: Update, context: ContextTypes.DEFAULT_
 async def job_etapa3_galeria(context: ContextTypes.DEFAULT_TYPE, chat_id_manual=None):
     #======== ENVIA GALERIA DE MÍDIAS E OFERTA VIP =============
     chat_id = chat_id_manual or context.job.chat_id
-    context.user_data['chat_id'] = chat_id
 
     logger.info(f"⏰ ETAPA 3: Enviando galeria de mídias para {chat_id}.")
-    await delete_message_if_exists(context, 'etapa2_msg_id') # Garante que a msg anterior foi deletada
+    
+    # Deleta mensagem anterior se existir
+    await delete_message_if_exists_bot_data(context, f'etapa2_{chat_id}', chat_id)
     
     # Envia as 4 mídias
     media_group = [
@@ -338,7 +355,11 @@ async def job_etapa3_galeria(context: ContextTypes.DEFAULT_TYPE, chat_id_manual=
     text_vip = "Gostou do que viu, meu bem 🤭?\n\nTenho muito mais no VIP pra você (TOTALMENTE SEM CENSURA).\n\nVem gozar porra quentinha pra mim🥵💦⬇️"
     keyboard = [[InlineKeyboardButton("QUERO O VIP🔥", callback_data='trigger_etapa4')]]
     msg = await context.bot.send_message(chat_id=chat_id, text=text_vip, reply_markup=InlineKeyboardMarkup(keyboard))
-    context.user_data['etapa3_msg_id'] = msg.message_id
+    
+    # Salva o ID da mensagem no bot_data
+    if 'message_ids' not in context.bot_data:
+        context.bot_data['message_ids'] = {}
+    context.bot_data['message_ids'][f'etapa3_{chat_id}'] = msg.message_id
     
     # Agenda o remarketing (fallback)
     context.job_queue.run_once(job_etapa3_remarketing, CONFIGURACAO_BOT["DELAYS"]["ETAPA_3_FALLBACK"], chat_id=chat_id, name=f"job_etapa3_remarketing_{chat_id}")
@@ -350,7 +371,7 @@ async def job_etapa3_remarketing(context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"⏰ ETAPA 3 (FALLBACK): Enviando remarketing breve para {chat_id}.")
     
     # Deleta a oferta anterior para não poluir o chat
-    await delete_message_if_exists(context, 'etapa3_msg_id')
+    await delete_message_if_exists_bot_data(context, f'etapa3_{chat_id}', chat_id)
     
     texto_remarketing = "Ei, amor... não some não. Tenho uma surpresinha pra você. Clica aqui pra gente continuar 🔥"
     keyboard = [[InlineKeyboardButton("CONTINUAR CONVERSANDO 🔥", callback_data='trigger_etapa4')]]
@@ -368,14 +389,13 @@ async def callback_trigger_etapa4(update: Update, context: ContextTypes.DEFAULT_
     
     # Remove o fallback e a mensagem anterior, depois avança
     await remove_job_if_exists(f"job_etapa3_remarketing_{chat_id}", context)
-    await delete_message_if_exists(context, 'etapa3_msg_id') # Apaga SÓ o texto da oferta
+    await delete_message_if_exists_bot_data(context, f'etapa3_{chat_id}', chat_id) # Apaga SÓ o texto da oferta
     await job_etapa4_planos_vip(context, chat_id_manual=chat_id)
     #================= FECHAMENTO ======================
     
 async def job_etapa4_planos_vip(context: ContextTypes.DEFAULT_TYPE, chat_id_manual=None):
     #======== MOSTRA OS PLANOS VIP =============
     chat_id = chat_id_manual or context.job.chat_id
-    context.user_data['chat_id'] = chat_id
 
     logger.info(f"⏰ ETAPA 4: Enviando planos VIP para {chat_id}.")
     
@@ -383,7 +403,11 @@ async def job_etapa4_planos_vip(context: ContextTypes.DEFAULT_TYPE, chat_id_manu
     keyboard = [[InlineKeyboardButton(p["botao_texto"], callback_data=f"plano:{p['id']}")] for p in VIP_PLANS.values()]
     
     msg = await context.bot.send_message(chat_id=chat_id, text=texto_planos, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-    context.user_data['etapa4_msg_id'] = msg.message_id
+    
+    # Salva o ID da mensagem no bot_data
+    if 'message_ids' not in context.bot_data:
+        context.bot_data['message_ids'] = {}
+    context.bot_data['message_ids'][f'etapa4_{chat_id}'] = msg.message_id
     
     # Agenda a oferta de desconto (fallback)
     context.job_queue.run_once(job_etapa4_desconto, CONFIGURACAO_BOT["DELAYS"]["ETAPA_4_FALLBACK"], chat_id=chat_id, name=f"job_etapa4_desconto_{chat_id}")
@@ -394,7 +418,7 @@ async def job_etapa4_desconto(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.chat_id
     logger.info(f"⏰ ETAPA 4 (FALLBACK): Oferecendo desconto de 20% para {chat_id}.")
     
-    await delete_message_if_exists(context, 'etapa4_msg_id')
+    await delete_message_if_exists_bot_data(context, f'etapa4_{chat_id}', chat_id)
     
     texto_desconto = "Ei, meu bem... vi que você ficou na dúvida. 🤔\n\nPra te ajudar a decidir, liberei um <b>desconto especial de 20% SÓ PRA VOCÊ</b>. Mas corre que é por tempo limitado! 👇"
     plano_desc = REMARKETING_PLANS["plano_desc_20_off"]
@@ -414,7 +438,7 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
     # Remove o job de desconto, pois o usuário já escolheu um plano
     await remove_job_if_exists(f"job_etapa4_desconto_{chat_id}", context)
     # Remove a mensagem com os botões de plano
-    await delete_message_if_exists(context, 'etapa4_msg_id')
+    await delete_message_if_exists_bot_data(context, f'etapa4_{chat_id}', chat_id)
     
     plano_id = query.data.split(":")[1]
     
