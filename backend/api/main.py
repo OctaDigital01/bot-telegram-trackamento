@@ -92,6 +92,38 @@ def health():
         'database': f'PostgreSQL ({db_status})'
     })
 
+@app.route('/debug/table-structure', methods=['GET'])
+def debug_table_structure():
+    """DEBUG: Verifica se coluna plano_id existe na tabela pix_transactions"""
+    try:
+        if not db:
+            return jsonify({'error': 'Database não disponível'}), 503
+        
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT column_name, data_type 
+                FROM information_schema.columns 
+                WHERE table_name='pix_transactions'
+                ORDER BY ordinal_position
+            """)
+            columns = cursor.fetchall()
+            
+            cursor.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name='pix_transactions' AND column_name='plano_id'
+            """)
+            plano_id_exists = cursor.fetchone() is not None
+            
+            return jsonify({
+                'table': 'pix_transactions',
+                'columns': [{'name': col[0], 'type': col[1]} for col in columns],
+                'plano_id_exists': plano_id_exists
+            })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/', methods=['GET'])
 def index():
     """Endpoint raiz com informações básicas."""
