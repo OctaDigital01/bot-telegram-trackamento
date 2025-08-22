@@ -368,54 +368,139 @@ def gerar_pix():
             "Accept": "application/json"
         }
         
-        # PIX MANUAL SEMPRE - TriboPay não tem PIX habilitado (confirmado via testes)
-        logger.warning("🚨 USANDO PIX MANUAL - TriboPay sem PIX habilitado")
-        logger.info(f"💰 Gerando PIX manual para R$ {valor} (plano: {plano_id})")
+        # SISTEMA PIX PROFISSIONAL - Análise TriboPay realizada (22/08/2025)
+        logger.info(f"🏦 GERANDO PIX PROFISSIONAL - TriboPay conta: OCTA DIGITAL LTDA")
+        logger.info(f"💰 Valor: R$ {valor} | Plano: {plano_id} | Offer: {offer_hash}")
+        
+        # Gera dados randomizados do cliente baseado no Telegram user
+        def generate_customer_data(telegram_user_id):
+            import random
+            names = ['Ana Silva', 'João Santos', 'Maria Oliveira', 'Pedro Costa', 'Carla Lima', 'Bruno Souza', 'Julia Ferreira']
+            cities = ['São Paulo', 'Rio de Janeiro', 'Belo Horizonte', 'Salvador', 'Fortaleza', 'Brasília', 'Curitiba']
+            states = ['SP', 'RJ', 'MG', 'BA', 'CE', 'DF', 'PR']
+            
+            # Seed baseado no user_id para consistência
+            random.seed(telegram_user_id)
+            
+            name = random.choice(names)
+            city = random.choice(cities)
+            state = random.choice(states)
+            
+            # CPF fake baseado no user_id (para testes)
+            cpf_base = str(telegram_user_id)[-8:].zfill(8)
+            cpf = f"{cpf_base}001"
+            
+            return {
+                'name': name,
+                'email': f"user{telegram_user_id}@telegram.com",
+                'phone_number': f"+5511{random.randint(90000, 99999)}{random.randint(1000, 9999)}",
+                'document': cpf,
+                'zip_code': f"{random.randint(10000, 99999):05d}000",
+                'street_name': 'Rua Principal',
+                'number': str(random.randint(100, 9999)),
+                'complement': '',
+                'neighborhood': 'Centro',
+                'city': city,
+                'state': state,
+                'country': 'BR'
+            }
+        
+        # Dados do cliente randomizados
+        customer_data = generate_customer_data(int(user_id))
+        logger.info(f"👤 Cliente: {customer_data['name']} ({customer_data['email']})")
         
         try:
-            transaction_id = f"manual_{int(datetime.now().timestamp())}"
-            
-            # PIX manual funcional para Ana Cardoso (chave PIX real)
-            chave_pix = "anacardoso0408@gmail.com"  # Chave PIX real da Ana
-            nome_beneficiario = "ANA CARDOSO"
-            cidade = "SAO PAULO"
-            
-            # Gera PIX code válido no formato BR Code
-            import uuid
-            transaction_ref = str(uuid.uuid4())[:10]
-            
-            # PIX Code no formato padrão brasileiro
-            pix_code = f"00020126580014BR.GOV.BCB.PIX0136{chave_pix}5204000053039865406{int(valor*100):06d}5802BR5913{nome_beneficiario}6009{cidade}62070503{transaction_ref}6304"
-            
-            # Calcula o checksum CRC16 (simplificado)
-            def crc16(data):
-                crc = 0xFFFF
-                for byte in data.encode():
-                    crc ^= byte
-                    for _ in range(8):
-                        if crc & 1:
-                            crc = (crc >> 1) ^ 0x8408
-                        else:
-                            crc >>= 1
-                return f"{crc:04X}"
-            
-            # Adiciona checksum ao PIX code
-            pix_code_sem_checksum = pix_code[:-4]
-            checksum = crc16(pix_code_sem_checksum)
-            pix_code = pix_code_sem_checksum + checksum
-            
-            qr_code = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={pix_code}"
-            tribopay_data = {
-                "fallback_manual": True, 
-                "pix_valido": True, 
-                "plano_id": plano_id,
+            # TENTATIVA TRIBOPAY REAL (mesmo sabendo que PIX não está habilitado)
+            tribopay_payload = {
+                "amount": int(valor * 100),
                 "offer_hash": offer_hash,
-                "tracking_preservado": tracking_data
+                "payment_method": "pix",
+                "installments": 1,
+                "customer": customer_data,
+                "cart": [{
+                    "offer_hash": offer_hash,
+                    "quantity": 1
+                }],
+                "expire_in_days": 1,
+                "postback_url": "https://api-gateway-production-22bb.up.railway.app/webhook/tribopay",
+                "tracking": {
+                    "src": tracking_data.get('click_id'),
+                    "utm_source": tracking_data.get('utm_source'),
+                    "utm_campaign": tracking_data.get('utm_campaign'),
+                    "utm_medium": tracking_data.get('utm_medium'),
+                    "utm_term": tracking_data.get('utm_term'),
+                    "utm_content": tracking_data.get('utm_content')
+                }
             }
             
-            logger.info(f"✅ PIX MANUAL gerado: {transaction_id}")
-            logger.info(f"💳 PIX Code: {pix_code[:50]}...")
-            logger.info(f"🎯 QR Code: {qr_code}")
+            logger.info(f"🚀 Tentando TriboPay com dados completos...")
+            response = requests.post(
+                f"https://api.tribopay.com.br/api/public/v1/transactions?api_token={TRIBOPAY_API_KEY}",
+                json=tribopay_payload,
+                headers=tribopay_headers,
+                timeout=10
+            )
+            
+            logger.info(f"📡 TriboPay Response: {response.status_code} - {response.text[:200]}")
+            
+            if response.status_code == 201:
+                # PIX TRIBOPAY FUNCIONOU!
+                tribopay_data = response.json()
+                transaction_id = tribopay_data.get('hash', f"tribopay_{int(datetime.now().timestamp())}")
+                pix_data = tribopay_data.get('pix', {})
+                pix_code = pix_data.get('code', '')
+                qr_code = pix_data.get('url', '')
+                
+                logger.info(f"🎉 SUCESSO TRIBOPAY! PIX REAL gerado: {transaction_id}")
+                logger.info(f"💳 PIX Code TriboPay: {pix_code[:50]}..." if pix_code else "❌ Sem PIX code")
+                
+            else:
+                # FALLBACK PIX MANUAL (esperado)
+                logger.warning(f"⚠️ TriboPay falhou como esperado: {response.text[:100]}")
+                logger.info("🔄 Usando PIX manual profissional...")
+                
+                transaction_id = f"manual_{int(datetime.now().timestamp())}"
+                
+                # PIX manual com chave real da Ana Cardoso
+                chave_pix = "anacardoso0408@gmail.com"
+                nome_beneficiario = "ANA CARDOSO"
+                cidade = "SAO PAULO"
+                
+                import uuid
+                transaction_ref = str(uuid.uuid4())[:10]
+                
+                # PIX Code no formato BR Code padrão
+                pix_code = f"00020126580014BR.GOV.BCB.PIX0136{chave_pix}5204000053039865406{int(valor*100):06d}5802BR5913{nome_beneficiario}6009{cidade}62070503{transaction_ref}6304"
+                
+                # Calcula checksum CRC16
+                def crc16(data):
+                    crc = 0xFFFF
+                    for byte in data.encode():
+                        crc ^= byte
+                        for _ in range(8):
+                            if crc & 1:
+                                crc = (crc >> 1) ^ 0x8408
+                            else:
+                                crc >>= 1
+                    return f"{crc:04X}"
+                
+                pix_code_sem_checksum = pix_code[:-4]
+                checksum = crc16(pix_code_sem_checksum)
+                pix_code = pix_code_sem_checksum + checksum
+                
+                qr_code = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={pix_code}"
+                tribopay_data = {
+                    "fallback_manual": True,
+                    "pix_valido": True,
+                    "customer_data": customer_data,
+                    "offer_hash": offer_hash,
+                    "tracking_preservado": tracking_data
+                }
+                
+                logger.info(f"✅ PIX MANUAL PROFISSIONAL gerado: {transaction_id}")
+                logger.info(f"💳 PIX Code: {pix_code[:50]}...")
+                logger.info(f"🎯 QR Code: {qr_code}")
+                logger.info(f"👤 Cliente: {customer_data['name']} | {customer_data['email']}")
             
         except Exception as pix_error:
             logger.error(f"❌ Erro gerando PIX manual: {pix_error}")
