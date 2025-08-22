@@ -345,10 +345,10 @@ def save_tracking():
             return jsonify({'success': False, 'error': 'Corpo da requisição não é um JSON válido'}), 400
         
         safe_id = data.get('safe_id')
-        original_data = data.get('original_data')
+        original_data = data.get('original') or data.get('original_data')  # Aceita ambos os formatos
         
         if not all([safe_id, original_data]):
-            return jsonify({'success': False, 'error': 'Campos obrigatórios ausentes: safe_id, original_data'}), 400
+            return jsonify({'success': False, 'error': 'Campos obrigatórios ausentes: safe_id, original|original_data'}), 400
         
         if not db:
             return jsonify({'success': False, 'error': 'Serviço indisponível (sem conexão com o banco de dados)'}), 503
@@ -438,6 +438,55 @@ def verificar_pix_existente(user_id, plano_id):
         return jsonify({'success': False, 'error': 'Erro interno do servidor'}), 500
 #================= FECHAMENTO ======================
 
+#======== FUNÇÃO DE CONVERSÃO XTRACKY =============
+def send_conversion_to_xtracky(transaction_id):
+    """Envia conversão para Xtracky quando pagamento é aprovado"""
+    try:
+        if not db:
+            logger.error("❌ Banco indisponível - conversão não enviada")
+            return False
+            
+        # Busca dados da transação
+        transaction = db.get_pix_transaction(transaction_id)
+        if not transaction:
+            logger.error(f"❌ Transação {transaction_id} não encontrada")
+            return False
+            
+        # Busca click_id diretamente da transação (está armazenado como campo separado)
+        click_id = transaction.get('click_id')
+        
+        if not click_id:
+            logger.warning(f"⚠️ Transação {transaction_id} sem click_id - conversão não enviada")
+            return False
+            
+        # Dados da conversão para Xtracky
+        conversion_data = {
+            'token': '72701474-7e6c-4c87-b84f-836d4547a4bd',
+            'click_id': click_id,
+            'value': float(transaction.get('amount', 0)),
+            'currency': 'BRL',
+            'status': 'paid'
+        }
+        
+        # Envia para Xtracky
+        response = requests.post(
+            'https://api.xtracky.com/api/integrations/tribopay',
+            json=conversion_data,
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            logger.info(f"✅ Conversão enviada para Xtracky: {click_id} - R$ {transaction.get('amount', 0)}")
+            return True
+        else:
+            logger.error(f"❌ Erro ao enviar conversão para Xtracky: {response.status_code} - {response.text}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"❌ Erro crítico ao enviar conversão para Xtracky: {e}")
+        return False
+#================= FECHAMENTO ======================
+
 #======== LÓGICA DO WEBHOOK (CORRIGIDA) =============
 @app.route('/webhook/tribopay', methods=['POST'])
 def tribopay_webhook():
@@ -488,7 +537,10 @@ def tribopay_webhook():
         if db:
             db.update_pix_transaction(transaction_id, status=status)
             logger.info(f"💾 Status da transação {transaction_id} atualizado para '{status}' no banco de dados.")
-            # Aqui você pode adicionar a lógica de postback para o Xtracky, se o status for 'paid'
+            
+            # Envia conversão para Xtracky se pagamento foi aprovado
+            if status == 'paid' or status == 'approved':
+                send_conversion_to_xtracky(transaction_id)
         else:
             logger.error("❌ Banco de dados indisponível. Não foi possível processar o webhook.")
 

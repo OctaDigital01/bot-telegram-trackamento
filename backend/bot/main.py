@@ -165,7 +165,26 @@ async def decode_tracking_data(encoded_param: str):
         return {'utm_source': 'direct_bot', 'click_id': 'direct_access'}
     
     try:
-        # Método 1: Base64 JSON
+        # Método 1: ID mapeado (começa com M)
+        if encoded_param.startswith('M') and len(encoded_param) <= 12:
+            try:
+                response = await http_client.get(f"{API_GATEWAY_URL}/api/tracking/get/{encoded_param}")
+                if response.status_code == 200:
+                    result = response.json()
+                    if result.get('success'):
+                        original_data = json.loads(result['original'])
+                        logger.info(f"✅ Tracking mapeado recuperado: {original_data}")
+                        return original_data
+                    else:
+                        logger.warning(f"⚠️ Tracking mapeado não encontrado: {encoded_param}")
+                else:
+                    logger.error(f"❌ Erro HTTP ao buscar tracking mapeado: {response.status_code}")
+            except Exception as e:
+                logger.error(f"❌ Erro ao buscar tracking mapeado: {e}")
+            # Se falhar, usa como click_id direto
+            return {'click_id': encoded_param}
+        
+        # Método 2: Base64 JSON
         try:
             decoded_bytes = base64.b64decode(encoded_param.encode('utf-8'))
             tracking_data = json.loads(decoded_bytes.decode('utf-8'))
@@ -174,7 +193,7 @@ async def decode_tracking_data(encoded_param: str):
         except (json.JSONDecodeError, Exception):
             pass # Tenta o próximo método
 
-        # Método 2: Formato :: separado
+        # Método 3: Formato :: separado
         if '::' in encoded_param:
             parts = encoded_param.split('::')
             tracking_data = {
