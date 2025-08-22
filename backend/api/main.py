@@ -459,15 +459,26 @@ def gerar_pix():
                 logger.info(f"🔗 QR Code URL: {qr_code}")
                 
             else:
-                # ERRO TRIBOPAY - SEM FALLBACK
+                # ERRO TRIBOPAY - PROBLEMA DE CONFIGURAÇÃO DA CONTA
                 error_msg = response.text
                 logger.error(f"❌ ERRO TRIBOPAY: {response.status_code}")
                 logger.error(f"❌ Detalhes: {error_msg}")
                 
+                # Erro específico de configuração da conta
+                if "minimo 5 reais" in error_msg.lower():
+                    logger.error("🚨 PROBLEMA IDENTIFICADO: Configuração da conta TriboPay")
+                    logger.error("📞 AÇÃO NECESSÁRIA: Contatar suporte TriboPay")
+                    logger.error("🏢 Conta: OCTA DIGITAL LTDA (vouwzzz7gk)")
+                    logger.error("📧 Email: contato.octadigital@gmail.com")
+                
                 return jsonify({
                     'success': False,
-                    'error': f'TriboPay Error: {error_msg}',
+                    'error': 'Configuração TriboPay: PIX/Boleto não habilitado na conta',
+                    'details': error_msg,
                     'status_code': response.status_code,
+                    'action_required': 'Contatar suporte TriboPay para habilitar PIX/Boleto',
+                    'account': 'OCTA DIGITAL LTDA (vouwzzz7gk)',
+                    'api_key_used': TRIBOPAY_API_KEY[:20] + '...',
                     'payload_sent': tribopay_payload
                 }), 500
                 
