@@ -368,8 +368,8 @@ def gerar_pix():
             "Accept": "application/json"
         }
         
-        # SISTEMA PIX PROFISSIONAL - Análise TriboPay realizada (22/08/2025)
-        logger.info(f"🏦 GERANDO PIX PROFISSIONAL - TriboPay conta: OCTA DIGITAL LTDA")
+        # FOCO EXCLUSIVO TRIBOPAY - Resolver problema real da API
+        logger.info(f"🎯 TENTATIVA TRIBOPAY REAL - Conta: OCTA DIGITAL LTDA")
         logger.info(f"💰 Valor: R$ {valor} | Plano: {plano_id} | Offer: {offer_hash}")
         
         # Gera dados randomizados do cliente baseado no Telegram user
@@ -409,117 +409,75 @@ def gerar_pix():
         customer_data = generate_customer_data(int(user_id))
         logger.info(f"👤 Cliente: {customer_data['name']} ({customer_data['email']})")
         
-        try:
-            # TENTATIVA TRIBOPAY REAL (mesmo sabendo que PIX não está habilitado)
-            tribopay_payload = {
-                "amount": int(valor * 100),
+        # PAYLOAD TRIBOPAY COMPLETO
+        tribopay_payload = {
+            "amount": int(valor * 100),
+            "offer_hash": offer_hash,
+            "payment_method": "pix",
+            "installments": 1,
+            "customer": customer_data,
+            "cart": [{
                 "offer_hash": offer_hash,
-                "payment_method": "pix",
-                "installments": 1,
-                "customer": customer_data,
-                "cart": [{
-                    "offer_hash": offer_hash,
-                    "quantity": 1
-                }],
-                "expire_in_days": 1,
-                "postback_url": "https://api-gateway-production-22bb.up.railway.app/webhook/tribopay",
-                "tracking": {
-                    "src": tracking_data.get('click_id'),
-                    "utm_source": tracking_data.get('utm_source'),
-                    "utm_campaign": tracking_data.get('utm_campaign'),
-                    "utm_medium": tracking_data.get('utm_medium'),
-                    "utm_term": tracking_data.get('utm_term'),
-                    "utm_content": tracking_data.get('utm_content')
-                }
+                "quantity": 1
+            }],
+            "expire_in_days": 1,
+            "postback_url": "https://api-gateway-production-22bb.up.railway.app/webhook/tribopay",
+            "tracking": {
+                "src": tracking_data.get('click_id'),
+                "utm_source": tracking_data.get('utm_source'),
+                "utm_campaign": tracking_data.get('utm_campaign'),
+                "utm_medium": tracking_data.get('utm_medium'),
+                "utm_term": tracking_data.get('utm_term'),
+                "utm_content": tracking_data.get('utm_content')
             }
-            
-            logger.info(f"🚀 Tentando TriboPay com dados completos...")
+        }
+        
+        logger.info(f"🚀 Enviando para TriboPay:")
+        logger.info(json.dumps(tribopay_payload, indent=2, default=str))
+        
+        try:
             response = requests.post(
                 f"https://api.tribopay.com.br/api/public/v1/transactions?api_token={TRIBOPAY_API_KEY}",
                 json=tribopay_payload,
                 headers=tribopay_headers,
-                timeout=10
+                timeout=15
             )
             
-            logger.info(f"📡 TriboPay Response: {response.status_code} - {response.text[:200]}")
+            logger.info(f"📡 TriboPay Response Status: {response.status_code}")
+            logger.info(f"📡 TriboPay Response Body: {response.text}")
             
             if response.status_code == 201:
-                # PIX TRIBOPAY FUNCIONOU!
+                # SUCESSO TRIBOPAY!
                 tribopay_data = response.json()
-                transaction_id = tribopay_data.get('hash', f"tribopay_{int(datetime.now().timestamp())}")
+                transaction_id = tribopay_data.get('hash')
                 pix_data = tribopay_data.get('pix', {})
                 pix_code = pix_data.get('code', '')
                 qr_code = pix_data.get('url', '')
                 
-                logger.info(f"🎉 SUCESSO TRIBOPAY! PIX REAL gerado: {transaction_id}")
-                logger.info(f"💳 PIX Code TriboPay: {pix_code[:50]}..." if pix_code else "❌ Sem PIX code")
+                logger.info(f"🎉 SUCESSO TRIBOPAY! Transaction: {transaction_id}")
+                logger.info(f"💳 PIX Code: {pix_code[:50]}..." if pix_code else "❌ Sem PIX code")
+                logger.info(f"🔗 QR Code URL: {qr_code}")
                 
             else:
-                # FALLBACK PIX MANUAL (esperado)
-                logger.warning(f"⚠️ TriboPay falhou como esperado: {response.text[:100]}")
-                logger.info("🔄 Usando PIX manual profissional...")
+                # ERRO TRIBOPAY - SEM FALLBACK
+                error_msg = response.text
+                logger.error(f"❌ ERRO TRIBOPAY: {response.status_code}")
+                logger.error(f"❌ Detalhes: {error_msg}")
                 
-                transaction_id = f"manual_{int(datetime.now().timestamp())}"
+                return jsonify({
+                    'success': False,
+                    'error': f'TriboPay Error: {error_msg}',
+                    'status_code': response.status_code,
+                    'payload_sent': tribopay_payload
+                }), 500
                 
-                # PIX manual com chave real da Ana Cardoso
-                chave_pix = "anacardoso0408@gmail.com"
-                nome_beneficiario = "ANA CARDOSO"
-                cidade = "SAO PAULO"
-                
-                import uuid
-                transaction_ref = str(uuid.uuid4())[:10]
-                
-                # PIX Code no formato BR Code padrão
-                pix_code = f"00020126580014BR.GOV.BCB.PIX0136{chave_pix}5204000053039865406{int(valor*100):06d}5802BR5913{nome_beneficiario}6009{cidade}62070503{transaction_ref}6304"
-                
-                # Calcula checksum CRC16
-                def crc16(data):
-                    crc = 0xFFFF
-                    for byte in data.encode():
-                        crc ^= byte
-                        for _ in range(8):
-                            if crc & 1:
-                                crc = (crc >> 1) ^ 0x8408
-                            else:
-                                crc >>= 1
-                    return f"{crc:04X}"
-                
-                pix_code_sem_checksum = pix_code[:-4]
-                checksum = crc16(pix_code_sem_checksum)
-                pix_code = pix_code_sem_checksum + checksum
-                
-                qr_code = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={pix_code}"
-                tribopay_data = {
-                    "fallback_manual": True,
-                    "pix_valido": True,
-                    "customer_data": customer_data,
-                    "offer_hash": offer_hash,
-                    "tracking_preservado": tracking_data
-                }
-                
-                logger.info(f"✅ PIX MANUAL PROFISSIONAL gerado: {transaction_id}")
-                logger.info(f"💳 PIX Code: {pix_code[:50]}...")
-                logger.info(f"🎯 QR Code: {qr_code}")
-                logger.info(f"👤 Cliente: {customer_data['name']} | {customer_data['email']}")
-            
-        except Exception as pix_error:
-            logger.error(f"❌ Erro gerando PIX manual: {pix_error}")
-            # FALLBACK: PIX simples que sempre funciona
-            logger.warning("⚠️ Fallback final - PIX simples")
-            transaction_id = f"manual_{int(datetime.now().timestamp())}"
-            
-            # PIX manual básico para Ana Cardoso
-            chave_pix = "anacardoso0408@gmail.com"
-            nome_beneficiario = "ANA CARDOSO"
-            cidade = "SAO PAULO"
-            
-            # PIX Code básico
-            import uuid
-            transaction_ref = str(uuid.uuid4())[:10]
-            pix_code = f"00020126580014BR.GOV.BCB.PIX0136{chave_pix}5204000053039865406{int(valor*100):06d}5802BR5913{nome_beneficiario}6009{cidade}62070503{transaction_ref}6304F8CB"
-            
-            qr_code = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={pix_code}"
-            tribopay_data = {"fallback_manual": True, "pix_valido": True, "error": str(pix_error)}
+        except Exception as e:
+            logger.error(f"❌ ERRO DE CONEXÃO TRIBOPAY: {e}")
+            return jsonify({
+                'success': False,
+                'error': f'Conexão TriboPay falhou: {str(e)}',
+                'payload_sent': tribopay_payload
+            }), 500
         
         # Salva transação no PostgreSQL com fallback robusto para plano_id
         if db:
