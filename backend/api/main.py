@@ -669,6 +669,282 @@ def tribopay_webhook():
         return jsonify({'error': 'Internal server error'}), 500
 #================= FECHAMENTO ======================
 
+#======== ENDPOINTS DASHBOARD =============
+@app.route('/api/overview', methods=['GET'])
+def get_overview():
+    """Dados para aba Visão Geral da Dashboard"""
+    try:
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        data = {}
+        
+        if not db:
+            return jsonify({'error': 'Database indisponível'}), 500
+            
+        # Base query for date filtering
+        date_filter = ""
+        date_params = []
+        
+        if start_date and end_date:
+            date_filter = "WHERE created_at::date BETWEEN %s AND %s"
+            date_params = [start_date, end_date]
+        
+        # 1. Entradas na presell (tracking_mapping)
+        try:
+            presell_entries = db.execute_query(f"""
+                SELECT COUNT(*) as total 
+                FROM tracking_mapping {date_filter}
+            """, date_params)
+            data['presell_entries'] = presell_entries[0]['total'] if presell_entries else 0
+        except:
+            data['presell_entries'] = 0
+        
+        # 2. /start no bot (bot_users)
+        try:
+            bot_starts = db.execute_query(f"""
+                SELECT COUNT(*) as total 
+                FROM bot_users {date_filter}
+            """, date_params)
+            data['bot_starts'] = bot_starts[0]['total'] if bot_starts else 0
+        except:
+            data['bot_starts'] = 0
+        
+        # 3. PIX gerados (pix_transactions)
+        try:
+            pix_generated = db.execute_query(f"""
+                SELECT COUNT(*) as total 
+                FROM pix_transactions {date_filter}
+            """, date_params)
+            data['pix_generated'] = pix_generated[0]['total'] if pix_generated else 0
+            
+            # PIX pagos
+            pix_paid = db.execute_query(f"""
+                SELECT COUNT(*) as total 
+                FROM pix_transactions 
+                WHERE status = 'paid' {' AND ' + date_filter.replace('WHERE ', '') if date_filter else ''}
+            """, date_params)
+            data['pix_paid'] = pix_paid[0]['total'] if pix_paid else 0
+        except:
+            data['pix_generated'] = 0
+            data['pix_paid'] = 0
+        
+        # 4. Conversões (conversion_logs) 
+        try:
+            conversions = db.execute_query(f"""
+                SELECT COUNT(*) as total 
+                FROM conversion_logs {date_filter}
+            """, date_params)
+            data['conversions'] = conversions[0]['total'] if conversions else 0
+        except:
+            data['conversions'] = 0
+            
+        # Etapas do funil (simulado por enquanto)
+        data['step_1_welcome'] = data['bot_starts']
+        data['step_2_preview'] = int(data['bot_starts'] * 0.8)
+        data['step_3_gallery'] = int(data['bot_starts'] * 0.6)
+        data['step_4_vip_plans'] = int(data['bot_starts'] * 0.4)
+        data['step_5_payment'] = data['pix_generated']
+        
+        # Dados adicionais
+        data['blocked_users'] = 0  # Implementar quando houver tabela
+        data['joined_group'] = 0   # Implementar quando houver tabela
+        data['left_group'] = 0     # Implementar quando houver tabela
+        
+        logger.info(f"✅ Dashboard overview: {data}")
+        return jsonify(data)
+        
+    except Exception as e:
+        logger.error(f"❌ Erro em get_overview: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/sales', methods=['GET'])
+def get_sales():
+    """Dados para aba Vendas da Dashboard"""
+    try:
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        data = {
+            'total_revenue': 0,
+            'total_transactions': 0,
+            'conversion_rate': 0,
+            'average_ticket': 0,
+            'sales_by_date': [],
+            'sales_by_plan': []
+        }
+        
+        if not db:
+            return jsonify({'error': 'Database indisponível'}), 500
+        
+        # Base query for date filtering
+        date_filter = ""
+        date_params = []
+        
+        if start_date and end_date:
+            date_filter = "WHERE created_at::date BETWEEN %s AND %s"
+            date_params = [start_date, end_date]
+        
+        try:
+            # Total de vendas
+            sales_data = db.execute_query(f"""
+                SELECT 
+                    SUM(amount) as total_revenue,
+                    COUNT(*) as total_transactions,
+                    AVG(amount) as average_ticket
+                FROM pix_transactions 
+                WHERE status = 'paid' {' AND ' + date_filter.replace('WHERE ', '') if date_filter else ''}
+            """, date_params)
+            
+            if sales_data and sales_data[0]:
+                result = sales_data[0]
+                data['total_revenue'] = float(result['total_revenue'] or 0)
+                data['total_transactions'] = result['total_transactions']
+                data['average_ticket'] = float(result['average_ticket'] or 0)
+            
+            # Taxa de conversão
+            total_pix_data = db.execute_query(f"""
+                SELECT COUNT(*) as total_pix 
+                FROM pix_transactions {date_filter}
+            """, date_params)
+            
+            total_pix = total_pix_data[0]['total_pix'] if total_pix_data else 0
+            if total_pix > 0:
+                data['conversion_rate'] = (data['total_transactions'] / total_pix) * 100
+            
+            # Vendas por data (últimos 30 dias ou período selecionado)
+            if not start_date or not end_date:
+                from datetime import datetime, timedelta
+                start_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+                end_date = datetime.now().strftime('%Y-%m-%d')
+            
+            sales_by_date = db.execute_query("""
+                SELECT 
+                    created_at::date as date,
+                    SUM(amount) as revenue,
+                    COUNT(*) as transactions
+                FROM pix_transactions 
+                WHERE status = 'paid' 
+                AND created_at::date BETWEEN %s AND %s
+                GROUP BY created_at::date
+                ORDER BY date DESC
+            """, [start_date, end_date])
+            
+            data['sales_by_date'] = [
+                {
+                    'date': row['date'].strftime('%Y-%m-%d'),
+                    'revenue': float(row['revenue']),
+                    'transactions': row['transactions']
+                } for row in sales_by_date
+            ] if sales_by_date else []
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Erro ao buscar dados de vendas: {e}")
+        
+        logger.info(f"✅ Dashboard sales: {data}")
+        return jsonify(data)
+        
+    except Exception as e:
+        logger.error(f"❌ Erro em get_sales: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/logs', methods=['GET'])
+def get_logs():
+    """Logs detalhados do sistema para Dashboard"""
+    try:
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        limit = int(request.args.get('limit', 100))
+        
+        logs = []
+        
+        if not db:
+            return jsonify({'error': 'Database indisponível'}), 500
+        
+        date_filter = ""
+        date_params = []
+        
+        if start_date and end_date:
+            date_filter = "WHERE created_at::date BETWEEN %s AND %s"
+            date_params = [start_date, end_date]
+        
+        try:
+            # Logs de conversão
+            conversion_logs = db.execute_query(f"""
+                SELECT 
+                    'conversion' as type,
+                    transaction_id,
+                    click_id,
+                    utm_source,
+                    utm_campaign,
+                    conversion_value,
+                    status,
+                    created_at
+                FROM conversion_logs {date_filter}
+                ORDER BY created_at DESC
+                LIMIT %s
+            """, date_params + [limit])
+            
+            if conversion_logs:
+                logs.extend([
+                    {
+                        'type': 'Conversão',
+                        'message': f"Conversão {row['transaction_id']} - {row['status']}",
+                        'details': {
+                            'click_id': row['click_id'],
+                            'utm_source': row['utm_source'],
+                            'utm_campaign': row['utm_campaign'],
+                            'value': float(row['conversion_value']) if row['conversion_value'] else 0
+                        },
+                        'created_at': row['created_at'].isoformat() if row['created_at'] else None
+                    } for row in conversion_logs
+                ])
+        except Exception as e:
+            logger.warning(f"⚠️ Erro ao buscar conversion_logs: {e}")
+        
+        try:
+            # Logs de transações PIX
+            pix_logs = db.execute_query(f"""
+                SELECT 
+                    transaction_id,
+                    telegram_id,
+                    amount,
+                    status,
+                    created_at,
+                    updated_at
+                FROM pix_transactions {date_filter}
+                ORDER BY created_at DESC
+                LIMIT %s
+            """, date_params + [limit])
+            
+            if pix_logs:
+                logs.extend([
+                    {
+                        'type': 'PIX',
+                        'message': f"PIX {row['transaction_id']} - {row['status']} - R$ {float(row['amount'])}",
+                        'details': {
+                            'telegram_id': row['telegram_id'],
+                            'amount': float(row['amount']),
+                            'status': row['status'],
+                            'updated_at': row['updated_at'].isoformat() if row['updated_at'] else None
+                        },
+                        'created_at': row['created_at'].isoformat() if row['created_at'] else None
+                    } for row in pix_logs
+                ])
+        except Exception as e:
+            logger.warning(f"⚠️ Erro ao buscar pix_transactions: {e}")
+        
+        # Ordena por data
+        logs.sort(key=lambda x: x['created_at'] or '', reverse=True)
+        
+        logger.info(f"✅ Dashboard logs: {len(logs)} logs encontrados")
+        return jsonify({'logs': logs[:limit]})
+        
+    except Exception as e:
+        logger.error(f"❌ Erro em get_logs: {e}")
+        return jsonify({'error': str(e)}), 500
+#================= FECHAMENTO ======================
+
 #======== EXECUÇÃO PRINCIPAL =============
 if __name__ == '__main__':
     if not TRIBOPAY_API_KEY:

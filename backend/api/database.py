@@ -454,6 +454,17 @@ class DatabaseManager:
                 WHERE cache_key = %s
             """, (cache_key,))
             return cursor.fetchone()
+    
+    def execute_query(self, query, params=None):
+        """Executa query SQL e retorna resultados"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                cursor.execute(query, params or [])
+                return cursor.fetchall()
+        except Exception as e:
+            logger.error(f"❌ Erro executando query: {e}")
+            return []
 
 # Instância global do database
 db = None
