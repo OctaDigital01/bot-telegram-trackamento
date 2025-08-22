@@ -1049,6 +1049,76 @@ def clear_database():
             'error': error_msg,
             'timestamp': datetime.now().isoformat()
         }), 500
+
+@app.route('/api/admin/debug-tables', methods=['GET'])
+def debug_tables():
+    """
+    ENDPOINT TEMPORÁRIO: Mostra o conteúdo real das tabelas para debug.
+    """
+    try:
+        # Verificação de segurança básica
+        auth_header = request.headers.get('Authorization')
+        if auth_header != 'Bearer admin-clear-2025':
+            return jsonify({'success': False, 'error': 'Acesso negado'}), 403
+        
+        if not db:
+            return jsonify({'success': False, 'error': 'Database indisponível'}), 500
+        
+        logger.info("🔍 EXECUTANDO DEBUG DAS TABELAS")
+        
+        # Lista das tabelas para verificar
+        tables_to_check = [
+            'conversion_logs',
+            'pix_transactions', 
+            'bot_users',
+            'tracking_mapping',
+            'tribopay_products_cache'
+        ]
+        
+        results = {}
+        
+        for table in tables_to_check:
+            try:
+                # Conta registros na tabela
+                count_query = f"SELECT COUNT(*) as total FROM {table};"
+                count_result = db.execute_query(count_query)
+                count = count_result[0]['total'] if count_result else 0
+                
+                # Se há registros, mostra alguns exemplos
+                sample_data = []
+                if count > 0:
+                    sample_query = f"SELECT * FROM {table} LIMIT 3;"
+                    sample_result = db.execute_query(sample_query)
+                    if sample_result:
+                        sample_data = [dict(row) for row in sample_result]
+                
+                results[table] = {
+                    'count': count,
+                    'sample': sample_data
+                }
+                
+                logger.info(f"📊 Tabela {table}: {count} registros")
+                
+            except Exception as e:
+                results[table] = {
+                    'error': str(e)
+                }
+                logger.error(f"❌ Erro verificando tabela {table}: {e}")
+        
+        return jsonify({
+            'success': True,
+            'timestamp': datetime.now().isoformat(),
+            'tables': results
+        })
+        
+    except Exception as e:
+        error_msg = f"Erro no debug das tabelas: {str(e)}"
+        logger.error(f"❌ {error_msg}")
+        return jsonify({
+            'success': False, 
+            'error': error_msg,
+            'timestamp': datetime.now().isoformat()
+        }), 500
 #================= FECHAMENTO ======================
 
 #======== EXECUÇÃO PRINCIPAL =============
