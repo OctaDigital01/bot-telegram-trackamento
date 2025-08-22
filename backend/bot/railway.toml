@@ -4,8 +4,13 @@ builder = "nixpacks"
 [deploy]
 startCommand = "python3 main.py"
 restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 2
+restartPolicyMaxRetries = 1
+# IMPORTANTE: Railway deve rodar apenas 1 instância
+replicas = 1
+numReplicas = 1
 
 [environments.production.variables]
 PYTHONPATH = "."
 PYTHONUNBUFFERED = "1"
+# Configuração para reduzir conflitos 409
+TELEGRAM_BOT_SINGLE_INSTANCE = "true"

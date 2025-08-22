@@ -13,6 +13,10 @@ import asyncio
 import json
 import base64
 import httpx
+import fcntl  # Para file locking
+import tempfile
+import signal
+import atexit
 from html import escape
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaVideo
@@ -27,8 +31,75 @@ load_dotenv()
 # 1. CONFIGURAÇÃO GERAL E INICIALIZAÇÃO
 # ==============================================================================
 
-# Variável global para controlar instância única
+# ======== CONTROLE DE INSTÂNCIA ÚNICA ROBUSTO =============
 _BOT_INSTANCE = None
+_LOCK_FILE = None
+_LOCK_FILE_PATH = None
+
+def create_lock_file():
+    """Cria arquivo de lock para garantir instância única"""
+    global _LOCK_FILE, _LOCK_FILE_PATH
+    try:
+        # Usa diretório temporário do sistema para o lock
+        lock_dir = tempfile.gettempdir()
+        _LOCK_FILE_PATH = os.path.join(lock_dir, 'telegram_bot_ana_cardoso.lock')
+        
+        # Cria ou abre o arquivo de lock
+        _LOCK_FILE = open(_LOCK_FILE_PATH, 'w')
+        
+        # Tenta obter lock exclusivo (não-bloqueante)
+        fcntl.flock(_LOCK_FILE.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        
+        # Escreve PID no arquivo
+        _LOCK_FILE.write(f"{os.getpid()}\n")
+        _LOCK_FILE.flush()
+        
+        logger.info(f"✅ Lock de instância única criado: {_LOCK_FILE_PATH}")
+        logger.info(f"🔒 PID atual: {os.getpid()}")
+        
+        # Registra cleanup para remover lock ao encerrar
+        atexit.register(cleanup_lock_file)
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+        
+        return True
+        
+    except BlockingIOError:
+        logger.error("❌ ERRO 409: Já existe uma instância do bot rodando!")
+        logger.error(f"💡 Arquivo de lock: {_LOCK_FILE_PATH}")
+        if _LOCK_FILE:
+            _LOCK_FILE.close()
+            _LOCK_FILE = None
+        return False
+    except Exception as e:
+        logger.error(f"❌ Erro criando arquivo de lock: {e}")
+        if _LOCK_FILE:
+            _LOCK_FILE.close()
+            _LOCK_FILE = None
+        return False
+
+def cleanup_lock_file():
+    """Remove arquivo de lock ao encerrar"""
+    global _LOCK_FILE, _LOCK_FILE_PATH
+    try:
+        if _LOCK_FILE:
+            fcntl.flock(_LOCK_FILE.fileno(), fcntl.LOCK_UN)
+            _LOCK_FILE.close()
+            _LOCK_FILE = None
+            logger.info("🔓 Lock de instância liberado")
+        
+        if _LOCK_FILE_PATH and os.path.exists(_LOCK_FILE_PATH):
+            os.remove(_LOCK_FILE_PATH)
+            logger.info(f"🗑️ Arquivo de lock removido: {_LOCK_FILE_PATH}")
+    except Exception as e:
+        logger.warning(f"⚠️ Erro removendo lock file: {e}")
+
+def signal_handler(signum, frame):
+    """Handler para sinais de encerramento"""
+    logger.info(f"📡 Sinal recebido: {signum}")
+    cleanup_lock_file()
+    exit(0)
+# ==========================================================
 
 # ======== CONFIGURAÇÃO DE LOGGING =============
 logging.basicConfig(
@@ -837,35 +908,45 @@ async def main():
     #======== INICIALIZA E EXECUTA O BOT DE FORMA ASSÍNCRONA (CORRIGIDO CONFLITOS) =============
     global _BOT_INSTANCE
     
-    # Força encerramento de qualquer instância anterior
+    # PRIMEIRA VERIFICAÇÃO: Cria file lock para garantir instância única
+    logger.info("🔒 Verificando se já existe outra instância do bot...")
+    if not create_lock_file():
+        logger.critical("❌ FALHA CRÍTICA: Outra instância do bot já está rodando!")
+        logger.critical("💡 SOLUÇÕES POSSÍVEIS:")
+        logger.critical("   1. Aguardar instância anterior encerrar (2-3 min)")
+        logger.critical("   2. Verificar processos Railway: railway ps")
+        logger.critical("   3. Reiniciar serviço: railway service restart")
+        return
+    
+    # Força encerramento de qualquer instância anterior (menos agressivo)
     if _BOT_INSTANCE:
-        logger.warning("⚠️ Bot já está rodando, encerrando instância anterior...")
+        logger.warning("⚠️ Instância anterior detectada, encerrando...")
         try:
             old_instance = _BOT_INSTANCE
-            # Tenta parar de forma gentil primeiro
+            # Tenta parar de forma mais gentil
             if hasattr(old_instance, 'updater') and old_instance.updater:
                 if hasattr(old_instance.updater, 'is_running') and old_instance.updater.is_running():
                     logger.info("🛑 Parando updater anterior...")
                     await old_instance.updater.stop()
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(2)  # Aumentado para 2s
             
             if hasattr(old_instance, 'stop'):
                 logger.info("🛑 Parando aplicação anterior...")
                 await old_instance.stop()
-                await asyncio.sleep(1)
+                await asyncio.sleep(2)  # Aumentado para 2s
                 
             if hasattr(old_instance, 'shutdown'):
                 logger.info("🛑 Fazendo shutdown da aplicação anterior...")
                 await old_instance.shutdown()
-                await asyncio.sleep(1)
+                await asyncio.sleep(2)  # Aumentado para 2s
                 
         except Exception as e:
-            logger.error(f"❌ Erro ao encerrar instância anterior: {e}")
+            logger.warning(f"⚠️ Erro ao encerrar instância anterior: {e}")
         
         _BOT_INSTANCE = None
         # Aguarda mais tempo para garantir que recursos sejam liberados
-        logger.info("⏳ Aguardando liberação de recursos...")
-        await asyncio.sleep(5)
+        logger.info("⏳ Aguardando liberação completa de recursos...")
+        await asyncio.sleep(8)  # Aumentado para 8s
     
     # Validação rigorosa das variáveis de ambiente
     required_vars = ['TELEGRAM_BOT_TOKEN', 'API_GATEWAY_URL', 'GRUPO_GRATIS_ID', 'GRUPO_GRATIS_INVITE_LINK']
@@ -905,56 +986,121 @@ async def main():
         logger.info("▶️ Iniciando aplicação...")
         await application.start()
         
-        logger.info("🚀 Iniciando polling...")
-        if application.updater:
-            await application.updater.start_polling(
-                allowed_updates=['message', 'callback_query', 'chat_join_request'],
-                drop_pending_updates=True,
-                read_timeout=30,
-                write_timeout=30,
-                connect_timeout=30,
-                pool_timeout=30
-            )
+        logger.info("🚀 Iniciando polling com retry inteligente...")
         
-        logger.info("✅ Bot online e recebendo atualizações - Sistema de tracking corrigido")
+        # Sistema de retry com backoff exponencial para evitar conflitos
+        max_retries = 3
+        base_delay = 1  # segundos
+        
+        for attempt in range(max_retries):
+            try:
+                if application.updater:
+                    await application.updater.start_polling(
+                        allowed_updates=['message', 'callback_query', 'chat_join_request'],
+                        drop_pending_updates=True,
+                        read_timeout=30,
+                        write_timeout=30,
+                        connect_timeout=30,
+                        pool_timeout=30
+                    )
+                    logger.info("✅ Polling iniciado com sucesso!")
+                    break  # Sucesso, sai do loop
+                    
+            except Conflict as e:
+                attempt_info = f"tentativa {attempt + 1}/{max_retries}"
+                logger.warning(f"⚠️ Conflito 409 na {attempt_info}: {e}")
+                
+                if attempt < max_retries - 1:  # Se não é a última tentativa
+                    delay = base_delay * (2 ** attempt)  # Backoff exponencial
+                    logger.info(f"🔄 Aguardando {delay}s antes da próxima tentativa...")
+                    await asyncio.sleep(delay)
+                    
+                    # Tenta limpar recursos antes da próxima tentativa
+                    try:
+                        if application.updater and hasattr(application.updater, 'stop'):
+                            logger.info("🧹 Limpando recursos antes de tentar novamente...")
+                            await application.updater.stop()
+                            await asyncio.sleep(1)
+                    except Exception as cleanup_error:
+                        logger.warning(f"⚠️ Erro na limpeza: {cleanup_error}")
+                else:
+                    # Última tentativa falhou, re-raise o erro
+                    logger.error("❌ Todas as tentativas de polling falharam!")
+                    raise
+        
+        logger.info("✅ Bot online e recebendo atualizações - Sistema anticonflito implementado")
         logger.info("📊 Funcionalidades ativas:")
-        logger.info("   - Decodificação de tracking com 4 métodos")
-        logger.info("   - Fallback inteligente para último tracking")
-        logger.info("   - Logs detalhados para debug")
-        logger.info("   - Prevenção de conflitos 409")
-        logger.info("   - Sistema de reutilização de PIX por plano")
-        logger.info("   - Timeout inteligente baseado em tempo restante")
+        logger.info("   - ✅ File lock system para instância única")
+        logger.info("   - ✅ Retry inteligente com backoff exponencial")
+        logger.info("   - ✅ Cleanup gracioso com timeouts")
+        logger.info("   - ✅ Decodificação de tracking com 4 métodos")
+        logger.info("   - ✅ Fallback inteligente para último tracking")
+        logger.info("   - ✅ Logs detalhados para debug")
+        logger.info("   - ✅ Sistema de reutilização de PIX por plano")
+        logger.info("   - ✅ Timeout inteligente baseado em tempo restante")
+        logger.info("🔒 Sistema anticonflito 409:")
+        logger.info(f"   - Lock file: {_LOCK_FILE_PATH}")
+        logger.info(f"   - PID atual: {os.getpid()}")
+        logger.info("   - Railway configurado para 1 instância única")
         
         # Mantém o script rodando indefinidamente
         await asyncio.Event().wait()
 
     except Conflict as e:
         logger.error(f"❌ CONFLITO 409: Múltiplas instâncias detectadas. {e}")
-        logger.error("💡 SOLUÇÃO: Verifique se há outras instâncias rodando no Railway")
-        logger.error("💡 COMANDO: railway ps para ver processos ativos")
+        logger.error("💡 ISSO NÃO DEVERIA ACONTECER com o novo sistema de file lock!")
+        logger.error("💡 POSSÍVEIS CAUSAS:")
+        logger.error("   - Railway ignorando o file lock system")
+        logger.error("   - Deploy simultâneo de múltiplas instâncias")
+        logger.error("💡 SOLUÇÕES:")
+        logger.error("   1. railway service restart")
+        logger.error("   2. Aguardar 2-3 minutos e tentar novamente")
+        raise  # Re-raise para que o Railway detecte a falha
     except Exception as e:
         logger.critical(f"❌ Erro fatal na execução do bot: {e}", exc_info=True)
+        raise  # Re-raise para que o Railway detecte a falha
     finally:
-        logger.info("🛑 Iniciando processo de encerramento...")
+        logger.info("🛑 Iniciando processo de encerramento gracioso...")
+        
+        # Cleanup mais robusto com timeouts
+        cleanup_tasks = []
+        
         try:
+            # Para o updater primeiro
             if _BOT_INSTANCE and hasattr(_BOT_INSTANCE, 'updater') and _BOT_INSTANCE.updater:
                 if hasattr(_BOT_INSTANCE.updater, 'is_running') and _BOT_INSTANCE.updater.is_running():
                     logger.info("🛑 Parando updater...")
-                    await _BOT_INSTANCE.updater.stop()
+                    cleanup_tasks.append(_BOT_INSTANCE.updater.stop())
             
-            if _BOT_INSTANCE:
+            # Para a aplicação
+            if _BOT_INSTANCE and hasattr(_BOT_INSTANCE, 'stop'):
                 logger.info("🛑 Parando aplicação...")
-                await _BOT_INSTANCE.stop()
+                cleanup_tasks.append(_BOT_INSTANCE.stop())
+                
+            # Executa cleanup com timeout de 10s
+            if cleanup_tasks:
+                await asyncio.wait_for(
+                    asyncio.gather(*cleanup_tasks, return_exceptions=True),
+                    timeout=10.0
+                )
+                
+            # Shutdown final
+            if _BOT_INSTANCE and hasattr(_BOT_INSTANCE, 'shutdown'):
                 logger.info("🛑 Fazendo shutdown...")
-                await _BOT_INSTANCE.shutdown()
+                await asyncio.wait_for(_BOT_INSTANCE.shutdown(), timeout=5.0)
             
+            # Fecha cliente HTTP
             if http_client and not http_client.is_closed:
                 logger.info("🔒 Fechando cliente HTTP...")
-                await http_client.aclose()
+                await asyncio.wait_for(http_client.aclose(), timeout=3.0)
         
+        except asyncio.TimeoutError:
+            logger.warning("⏰ Timeout durante encerramento - forçando saída")
         except Exception as e:
             logger.error(f"❌ Erro durante encerramento: {e}")
         finally:
+            # Garante cleanup do file lock
+            cleanup_lock_file()
             _BOT_INSTANCE = None
             logger.info("✅ Bot encerrado com sucesso.")
 #================= FECHAMENTO ======================
