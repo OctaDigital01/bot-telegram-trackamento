@@ -399,8 +399,16 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     context.user_data['chat_id'] = chat_id
     
-    # Nota: PIX só deve ser invalidado quando usuário realmente gerar novo PIX
-    # Não há necessidade de invalidar a cada /start
+    # NOVA SESSÃO: Invalida TODOS os PIX anteriores do usuário
+    # Cada /start deve ser uma sessão independente
+    logger.info(f"🔄 NOVA SESSÃO: Invalidando PIX anteriores para usuário {user.id}")
+    if await invalidar_pix_usuario(user.id):
+        logger.info(f"✅ PIX anteriores invalidados com sucesso para usuário {user.id}")
+    else:
+        logger.warning(f"⚠️ Falha ao invalidar PIX anteriores para usuário {user.id}")
+    
+    # Remove jobs de timeout PIX que possam estar ativos
+    await remove_job_if_exists(f"timeout_pix_{user.id}", context)
     
     if 'user_chat_map' not in context.bot_data:
         context.bot_data['user_chat_map'] = {}
