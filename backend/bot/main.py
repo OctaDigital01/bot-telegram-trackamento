@@ -419,7 +419,6 @@ async def callback_trigger_etapa3(update: Update, context: ContextTypes.DEFAULT_
     logger.info(f"👤 ETAPA 3: Usuário {chat_id} clicou para ver prévias.")
     
     await remove_job_if_exists(f"job_etapa3_{chat_id}", context)
-    await query.delete_message()
     
     await job_etapa3_galeria(context, chat_id_manual=chat_id)
     #================= FECHAMENTO ======================
@@ -628,19 +627,11 @@ async def enviar_mensagem_pix(context: ContextTypes.DEFAULT_TYPE, chat_id: int, 
 async def callback_ja_paguei(update: Update, context: ContextTypes.DEFAULT_TYPE):
     #======== HANDLER PARA BOTÃO "JÁ PAGUEI" =============
     query = update.callback_query
-    await query.answer("Ótimo! Estamos processando seu pagamento.", show_alert=False)
+    await query.answer("🎉 Perfeito, meu amor! Seu pagamento já está sendo processado! ⚡ Assim que for aprovado, você receberá o acesso ao grupo VIP aqui mesmo. Geralmente demora apenas alguns segundos...", show_alert=True)
     user_id = query.from_user.id
     
     await remove_job_if_exists(f"timeout_pix_{user_id}", context)
     logger.info(f"⏰ Job de timeout PIX cancelado para {user_id} após confirmação de pagamento.")
-    
-    texto_confirmacao = (
-        "🎉 <b>Perfeito, meu amor!</b>\n\n"
-        "Seu pagamento já está sendo processado! ⚡\n\n"
-        "📱 <b>Assim que for aprovado, você receberá o acesso ao grupo VIP aqui mesmo.</b>\n\n"
-        "⏰ <i>Geralmente demora apenas alguns segundos...</i>"
-    )
-    await query.message.edit_caption(caption=texto_confirmacao, parse_mode='HTML')
     #================= FECHAMENTO ======================
 
 async def callback_escolher_outro_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
