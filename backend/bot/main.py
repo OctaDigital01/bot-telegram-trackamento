@@ -91,6 +91,17 @@ http_client = httpx.AsyncClient(
 # 2. FUNÇÕES AUXILIARES E DE LÓGICA REUTILIZÁVEL
 # ==============================================================================
 
+async def check_if_user_is_member(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bool:
+    #======== VERIFICA SE USUÁRIO JÁ É MEMBRO DO GRUPO =============
+    try:
+        member = await context.bot.get_chat_member(chat_id=GROUP_ID, user_id=user_id)
+        # Verifica se o usuário é membro ativo (não foi removido ou saiu)
+        return member.status in ['member', 'administrator', 'creator']
+    except Exception as e:
+        logger.warning(f"⚠️ Erro verificando se usuário {user_id} é membro do grupo: {e}")
+        return False
+    #================= FECHAMENTO ======================
+
 async def decode_tracking_data(encoded_param: str):
     #======== DECODIFICA DADOS DE TRACKING =============
     logger.info(f"🔍 Decodificando tracking: {encoded_param}")
@@ -164,8 +175,14 @@ async def remove_job_if_exists(name: str, context: ContextTypes.DEFAULT_TYPE) ->
     return True
     #================= FECHAMENTO ======================
 
-async def delete_message_if_exists(context: ContextTypes.DEFAULT_TYPE, key: str):
+async def delete_message_if_exists(context: ContextTypes.DEFAULT_TYPE, key: str, allow_delete: bool = True):
     #======== DELETA MENSAGEM ANTERIOR USANDO user_data =============
+    if not allow_delete:
+        # Se não é permitido deletar, apenas limpa a chave
+        if key in context.user_data:
+            del context.user_data[key]
+        return
+        
     if key in context.user_data:
         chat_id = context.user_data.get('chat_id')
         message_id = context.user_data[key]
@@ -178,8 +195,14 @@ async def delete_message_if_exists(context: ContextTypes.DEFAULT_TYPE, key: str)
                 del context.user_data[key] # Limpa a chave após a tentativa
     #================= FECHAMENTO ======================
 
-async def delete_message_if_exists_bot_data(context: ContextTypes.DEFAULT_TYPE, key: str, chat_id: int):
+async def delete_message_if_exists_bot_data(context: ContextTypes.DEFAULT_TYPE, key: str, chat_id: int, allow_delete: bool = True):
     #======== DELETA MENSAGEM ANTERIOR USANDO bot_data =============
+    if not allow_delete:
+        # Se não é permitido deletar, apenas limpa a chave
+        if 'message_ids' in context.bot_data and key in context.bot_data['message_ids']:
+            del context.bot_data['message_ids'][key]
+        return
+        
     if 'message_ids' in context.bot_data and key in context.bot_data['message_ids']:
         message_id = context.bot_data['message_ids'][key]
         if message_id:
@@ -218,6 +241,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     logger.info(f"🎯 Tracking processado: {tracking_data}")
     
+    # Verifica se o usuário já é membro do grupo
+    is_member = await check_if_user_is_member(context, user.id)
+    logger.info(f"👥 Usuário {user.id} já é membro do grupo: {is_member}")
+    
     try:
         user_data_payload = {
             'telegram_id': user.id,
@@ -242,13 +269,22 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"❌ Erro crítico salvando usuário {user.id}: {e}")
 
-    # Envia a mensagem inicial
-    text = "Meu bem, entra no meu *GRUPINHO GRÁTIS* pra ver daquele jeito q vc gosta 🥵⬇️"
-    keyboard = [[InlineKeyboardButton("ENTRAR NO GRUPO 🥵", url=GROUP_INVITE_LINK)]]
-    await context.bot.send_photo(chat_id=chat_id, photo=MEDIA_APRESENTACAO, caption=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
-    
-    # Agenda a próxima etapa (fallback) caso o usuário não solicite entrada no grupo
-    context.job_queue.run_once(job_etapa2_prompt_previa, CONFIGURACAO_BOT["DELAYS"]["ETAPA_1_FALLBACK"], chat_id=chat_id, name=f"job_etapa2_{chat_id}")
+    if is_member:
+        # Usuário já é membro - fluxo alternativo
+        text = "Que bom te ver de volta, meu bem! 😍\n\nJá que você já tá no grupinho, que tal ver uns conteúdinhos especiais que preparei pra você? 🔥"
+        keyboard = [[InlineKeyboardButton("VER CONTEÚDINHO 🥵", callback_data='trigger_etapa3')]]
+        await context.bot.send_photo(chat_id=chat_id, photo=MEDIA_APRESENTACAO, caption=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
+        
+        # Agenda direto a Etapa 3 como fallback
+        context.job_queue.run_once(job_etapa3_galeria, CONFIGURACAO_BOT["DELAYS"]["ETAPA_2_FALLBACK"], chat_id=chat_id, name=f"job_etapa3_{chat_id}")
+    else:
+        # Usuário novo - fluxo normal
+        text = "Meu bem, entra no meu *GRUPINHO GRÁTIS* pra ver daquele jeito q vc gosta 🥵⬇️"
+        keyboard = [[InlineKeyboardButton("ENTRAR NO GRUPO 🥵", url=GROUP_INVITE_LINK)]]
+        await context.bot.send_photo(chat_id=chat_id, photo=MEDIA_APRESENTACAO, caption=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
+        
+        # Agenda a próxima etapa (fallback) caso o usuário não solicite entrada no grupo
+        context.job_queue.run_once(job_etapa2_prompt_previa, CONFIGURACAO_BOT["DELAYS"]["ETAPA_1_FALLBACK"], chat_id=chat_id, name=f"job_etapa2_{chat_id}")
     #================= FECHAMENTO ======================
 
 # ------------------------- ETAPA 1.5: PEDIDO DE ENTRADA NO GRUPO (HANDLER) -------------------------
@@ -370,8 +406,8 @@ async def job_etapa3_remarketing(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.chat_id
     logger.info(f"⏰ ETAPA 3 (FALLBACK): Enviando remarketing breve para {chat_id}.")
     
-    # Deleta a oferta anterior para não poluir o chat
-    await delete_message_if_exists_bot_data(context, f'etapa3_{chat_id}', chat_id)
+    # NÃO deleta a oferta anterior (mantém histórico das primeiras etapas)
+    await delete_message_if_exists_bot_data(context, f'etapa3_{chat_id}', chat_id, allow_delete=False)
     
     texto_remarketing = "Ei, amor... não some não. Tenho uma surpresinha pra você. Clica aqui pra gente continuar 🔥"
     keyboard = [[InlineKeyboardButton("CONTINUAR CONVERSANDO 🔥", callback_data='trigger_etapa4')]]
@@ -387,9 +423,9 @@ async def callback_trigger_etapa4(update: Update, context: ContextTypes.DEFAULT_
     
     logger.info(f"👤 ETAPA 4: Usuário {chat_id} clicou para conhecer o VIP.")
     
-    # Remove o fallback e a mensagem anterior, depois avança
+    # Remove o fallback mas NÃO deleta mensagem anterior (mantém histórico)
     await remove_job_if_exists(f"job_etapa3_remarketing_{chat_id}", context)
-    await delete_message_if_exists_bot_data(context, f'etapa3_{chat_id}', chat_id) # Apaga SÓ o texto da oferta
+    await delete_message_if_exists_bot_data(context, f'etapa3_{chat_id}', chat_id, allow_delete=False)
     await job_etapa4_planos_vip(context, chat_id_manual=chat_id)
     #================= FECHAMENTO ======================
     
@@ -418,7 +454,8 @@ async def job_etapa4_desconto(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.chat_id
     logger.info(f"⏰ ETAPA 4 (FALLBACK): Oferecendo desconto de 20% para {chat_id}.")
     
-    await delete_message_if_exists_bot_data(context, f'etapa4_{chat_id}', chat_id)
+    # NÃO deleta mensagem anterior (mantém histórico das primeiras etapas)
+    await delete_message_if_exists_bot_data(context, f'etapa4_{chat_id}', chat_id, allow_delete=False)
     
     texto_desconto = "Ei, meu bem... vi que você ficou na dúvida. 🤔\n\nPra te ajudar a decidir, liberei um <b>desconto especial de 20% SÓ PRA VOCÊ</b>. Mas corre que é por tempo limitado! 👇"
     plano_desc = REMARKETING_PLANS["plano_desc_20_off"]
@@ -437,8 +474,8 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
     
     # Remove o job de desconto, pois o usuário já escolheu um plano
     await remove_job_if_exists(f"job_etapa4_desconto_{chat_id}", context)
-    # Remove a mensagem com os botões de plano
-    await delete_message_if_exists_bot_data(context, f'etapa4_{chat_id}', chat_id)
+    # AGORA SIM deleta mensagens anteriores - chegamos na etapa VIP!
+    await delete_message_if_exists_bot_data(context, f'etapa4_{chat_id}', chat_id, allow_delete=True)
     
     plano_id = query.data.split(":")[1]
     
