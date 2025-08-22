@@ -175,10 +175,45 @@ def calcular_tempo_restante(pix_data: dict) -> int:
             logger.warning("⚠️ PIX sem data de criação")
             return 0
             
+        logger.info(f"🔍 Processando created_at: '{created_at}' (tipo: {type(created_at)})")
+            
         # Converte string para datetime se necessário
         if isinstance(created_at, str):
-            # Remove 'Z' e converte para datetime
-            created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+            try:
+                # Método 1: Formato GMT - "Fri, 22 Aug 2025 18:19:40 GMT"
+                if 'GMT' in created_at or 'UTC' in created_at:
+                    logger.info("🔍 Detectado formato GMT/UTC")
+                    from email.utils import parsedate_to_datetime
+                    created_at = parsedate_to_datetime(created_at)
+                    logger.info(f"✅ GMT convertido para: {created_at}")
+                    
+                # Método 2: Formato ISO com Z - "2025-08-22T18:19:40Z"
+                elif 'Z' in created_at:
+                    logger.info("🔍 Detectado formato ISO com Z")
+                    created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    logger.info(f"✅ ISO-Z convertido para: {created_at}")
+                    
+                # Método 3: Formato ISO puro - "2025-08-22T18:19:40"
+                elif 'T' in created_at:
+                    logger.info("🔍 Detectado formato ISO puro")
+                    created_at = datetime.fromisoformat(created_at)
+                    # Se não tem timezone, assume UTC
+                    if created_at.tzinfo is None:
+                        from datetime import timezone
+                        created_at = created_at.replace(tzinfo=timezone.utc)
+                    logger.info(f"✅ ISO convertido para: {created_at}")
+                    
+                # Método 4: Outros formatos
+                else:
+                    logger.warning(f"⚠️ Formato de data não reconhecido: {created_at}")
+                    # Tenta parsing genérico
+                    created_at = datetime.fromisoformat(created_at)
+                    
+            except Exception as parse_error:
+                logger.error(f"❌ Erro parsing data '{created_at}': {parse_error}")
+                # Fallback: retorna 30 min para dar uma chance ao PIX
+                logger.warning("🔄 Usando fallback de 30 minutos para PIX com data inválida")
+                return 30
         
         # Calcula tempo de expiração (1 hora após criação)
         expire_time = created_at + timedelta(hours=1)
@@ -189,11 +224,17 @@ def calcular_tempo_restante(pix_data: dict) -> int:
         minutos_restantes = max(0, int(tempo_restante.total_seconds() / 60))
         
         logger.info(f"⏰ Tempo restante calculado: {minutos_restantes} minutos")
+        logger.info(f"🕐 Criado em: {created_at}")
+        logger.info(f"🕐 Expira em: {expire_time}")
+        logger.info(f"🕐 Agora: {now}")
+        
         return minutos_restantes
         
     except Exception as e:
-        logger.error(f"❌ Erro calculando tempo restante: {e}")
-        return 0
+        logger.error(f"❌ Erro CRÍTICO calculando tempo restante: {e}")
+        # Fallback inteligente: se der erro, considera que PIX ainda é válido por 30 min
+        logger.warning("🔄 Usando fallback de 30 minutos devido ao erro de cálculo")
+        return 30
     #================= FECHAMENTO ======================
 
 async def invalidar_pix_usuario(user_id: int):
@@ -583,22 +624,28 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
         await context.bot.send_message(chat_id, "❌ Ops! Ocorreu um erro. Por favor, tente novamente.")
         return
 
-    # LÓGICA DE REUTILIZAÇÃO DE PIX IMPLEMENTADA
-    logger.info(f"🔍 Verificando PIX existente para usuário {user_id}, plano {plano_id}")
+    # LÓGICA DE REUTILIZAÇÃO DE PIX IMPLEMENTADA - CRÍTICO
+    logger.info(f"🔍 VERIFICANDO PIX EXISTENTE: user_id={user_id}, plano_id={plano_id}")
     pix_existente = await verificar_pix_existente(user_id, plano_id)
     
     if pix_existente:
-        # Calcula tempo restante
+        logger.info(f"📦 PIX ENCONTRADO: {pix_existente}")
+        
+        # Calcula tempo restante com nova função corrigida
         tempo_restante = calcular_tempo_restante(pix_existente)
+        logger.info(f"⏰ TEMPO CALCULADO: {tempo_restante} minutos")
         
         if tempo_restante > 0:  # PIX ainda válido
-            logger.info(f"♻️ REUTILIZANDO PIX para {user_id} - Plano: {plano_selecionado['nome']} - Tempo restante: {tempo_restante} min")
+            logger.info(f"✅ PIX VÁLIDO - REUTILIZANDO para {user_id}")
+            logger.info(f"♻️ Plano: {plano_selecionado['nome']} - Tempo restante: {tempo_restante} min")
             await enviar_mensagem_pix(context, chat_id, user_id, plano_selecionado, pix_existente, is_reused=True)
             return
         else:
-            logger.info(f"⏰ PIX expirado para {user_id} - Gerando novo PIX")
+            logger.info(f"❌ PIX EXPIRADO (0 minutos) para {user_id} - Gerando novo PIX")
             # PIX expirado, invalida e gera novo
             await invalidar_pix_usuario(user_id)
+    else:
+        logger.info(f"🚫 NENHUM PIX encontrado para {user_id}, plano {plano_id}")
     
     # Se chegou aqui, precisa GERAR NOVO PIX
     logger.info(f"💳 Gerando PIX NOVO para {user_id} - Plano: {plano_selecionado['nome']}")

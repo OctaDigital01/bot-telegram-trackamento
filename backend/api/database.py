@@ -374,12 +374,41 @@ class DatabaseManager:
         """Alias para get_active_pix - mantém compatibilidade"""
         result = self.get_active_pix(telegram_id, plano_id)
         if result:
+            # Padroniza formato de data para ISO
+            created_at = result.get('created_at')
+            if created_at:
+                # Se é string, converte para datetime e depois para ISO
+                if isinstance(created_at, str):
+                    try:
+                        from datetime import datetime
+                        from email.utils import parsedate_to_datetime
+                        
+                        # Se é formato GMT, converte
+                        if 'GMT' in created_at or 'UTC' in created_at:
+                            created_at = parsedate_to_datetime(created_at)
+                        else:
+                            # Tenta parsing direto
+                            created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                            
+                        # Converte para string ISO
+                        created_at = created_at.isoformat()
+                        logger.info(f"🔄 Data convertida para ISO: {created_at}")
+                        
+                    except Exception as e:
+                        logger.warning(f"⚠️ Erro convertendo data {created_at}: {e}")
+                        # Mantém original se falhar
+                        pass
+                elif hasattr(created_at, 'isoformat'):
+                    # Se é datetime object, converte para ISO string
+                    created_at = created_at.isoformat()
+                    logger.info(f"🔄 Datetime convertido para ISO: {created_at}")
+            
             # Converte para formato esperado pela API
             return {
                 'pix_copia_cola': result.get('pix_code'),
                 'qr_code': result.get('qr_code'),
                 'transaction_id': result.get('transaction_id'),
-                'created_at': result.get('created_at'),
+                'created_at': created_at,
                 'status': result.get('status')
             }
         return None
