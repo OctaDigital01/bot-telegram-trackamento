@@ -1,25 +1,24 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
 Bot Telegram - Funil de Vendas com Tracking Completo
 Conecta com API Gateway
-Versão com Fluxo de Funil, Remarketing e Aprovação Automática no Grupo
+Versão com Fluxo de Funil Otimizado, Remarketing e Aprovação em Background
 Token Fix: 22/08/2025
 """
-
 import os
 import logging
 import asyncio
 import json
 import base64
 import httpx
-from datetime import datetime
-# from cachetools import TTLCache  # Removido - sem cache
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaVideo, ChatJoinRequest
+from html import escape
+from dotenv import load_dotenv
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaVideo
 from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler, ChatJoinRequestHandler
 from telegram.constants import ParseMode
 from telegram.error import BadRequest
-from html import escape
-from dotenv import load_dotenv
 
 # Carregar variáveis do arquivo .env
 load_dotenv()
@@ -52,7 +51,6 @@ MEDIA_APRESENTACAO = os.getenv('MEDIA_APRESENTACAO')
 MEDIA_VIDEO_QUENTE = os.getenv('MEDIA_VIDEO_QUENTE')
 MEDIA_PREVIA_SITE = os.getenv('MEDIA_PREVIA_SITE')
 MEDIA_PROVOCATIVA = os.getenv('MEDIA_PROVOCATIVA')
-MEDIA_VIDEO_SEDUCAO = os.getenv('MEDIA_VIDEO_SEDUCAO')
 # ====================================================
 
 # ======== CONFIGURAÇÃO DOS PLANOS VIP =============
@@ -63,33 +61,29 @@ VIP_PLANS = {
 }
 # ==================================================
 
-# ======== CONFIGURAÇÃO DE REMARKETING =============
-REMARKETING_PLAN = {
-    "plano_desc": {"id": "plano_desc", "nome": "VIP com Desconto", "valor": 19.90, "botao_texto": "🤑 QUERO O VIP COM DESCONTO DE R$19,90"}
+# ======== CONFIGURAÇÃO DE REMARKETING E DESCONTO =============
+REMARKETING_PLANS = {
+    "plano_desc_etapa5": {"id": "plano_desc_etapa5", "nome": "VIP com Desconto (Remarketing)", "valor": 19.90, "botao_texto": "🤑 QUERO O VIP COM DESCONTO DE R$19,90"},
+    "plano_desc_20_off": {"id": "plano_desc_20_off", "nome": "VIP com 20% OFF", "valor": 19.90, "botao_texto": "🤑 QUERO MEU DESCONTO DE 20% AGORA"}
 }
 # ==================================================
 
-# ======== CONFIGURAÇÃO DE DELAYS E TIMEOUTS =============
+# ======== CONFIGURAÇÃO DE DELAYS (NOVOS TEMPOS) =============
 CONFIGURACAO_BOT = {
     "DELAYS": {
-        "ETAPA_2_PROMPT_PREVIA": 10,      # (20s) Tempo para enviar o prompt de prévia se não clicou
-        "ETAPA_3_GALERIA": 5,             # (5s) Tempo para enviar a galeria de mídias
-        "ETAPA_4_PLANOS_VIP": 30,         # (30s) Tempo para enviar os planos VIP
-        "ETAPA_5_REMARKETING": 300,       # (5min) Tempo para enviar a oferta de remarketing
-        "APROVACAO_GRUPO_BG": 5,          # (5s) Tempo para aprovar a entrada no grupo em background
+        "ETAPA_1_FALLBACK": 20,         # (20s) Se não clicar para entrar no grupo
+        "ETAPA_2_FALLBACK": 20,         # (20s) Se não clicar para ver prévia
+        "ETAPA_3_FALLBACK": 40,         # (40s) Se não clicar no "QUERO O VIP", envia remarketing
+        "ETAPA_4_FALLBACK": 60,         # (1min) Se não escolher plano, envia desconto
+        "APROVACAO_GRUPO_BG": 40,       # (40s) Tempo para aprovar a entrada no grupo em background
     }
 }
 # ========================================================
 
-# ======== NENHUM CACHE - SEMPRE REINICIA =============
-# Removido: tracking_cache, usuarios_salvos, message_cache
-# Cada /start é um novo começo limpo
-# ====================================================
-
 # ======== CLIENTE HTTP ASSÍNCRONO =============
 http_client = httpx.AsyncClient(
     timeout=httpx.Timeout(10.0, read=30.0),
-    limits=httpx.Limits(max_keepalive_connections=3, max_connections=5, keepalive_expiry=30.0)
+    limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
 )
 # ==============================================
 
@@ -99,6 +93,7 @@ http_client = httpx.AsyncClient(
 
 async def decode_tracking_data(encoded_param: str):
     #======== DECODIFICA DADOS DE TRACKING =============
+    # Lógica original mantida
     try:
         if encoded_param.startswith('M') and len(encoded_param) <= 12:
             try:
@@ -125,8 +120,7 @@ async def decode_tracking_data(encoded_param: str):
 
 async def remove_job_if_exists(name: str, context: ContextTypes.DEFAULT_TYPE) -> bool:
     #======== REMOVE UM JOB AGENDADO =============
-    if not context.job_queue:
-        return False
+    if not context.job_queue: return False
     current_jobs = context.job_queue.get_jobs_by_name(name)
     if not current_jobs: return False
     for job in current_jobs:
@@ -134,93 +128,97 @@ async def remove_job_if_exists(name: str, context: ContextTypes.DEFAULT_TYPE) ->
     return True
     #================= FECHAMENTO ======================
 
-async def delete_message_if_exists(context: ContextTypes.DEFAULT_TYPE, key: str, chat_id: int = None):
-    #======== DELETA MENSAGEM ANTERIOR =============
-    # Sem cache - não deleta mensagens anteriores
-    pass
+async def delete_message_if_exists(context: ContextTypes.DEFAULT_TYPE, key: str):
+    #======== DELETA MENSAGEM ANTERIOR USANDO user_data =============
+    if key in context.user_data:
+        chat_id = context.user_data.get('chat_id')
+        message_id = context.user_data[key]
+        if chat_id and message_id:
+            try:
+                await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+            except BadRequest as e:
+                logger.warning(f"⚠️ Não foi possível deletar a mensagem {message_id} no chat {chat_id}: {e}")
+            finally:
+                del context.user_data[key] # Limpa a chave após a tentativa
     #================= FECHAMENTO ======================
 
 # ==============================================================================
 # 3. LÓGICA DO FUNIL DE VENDAS (POR ETAPA)
 # ==============================================================================
 
-# ------------------------- ETAPA 1: BEM-VINDO -------------------------
+# ------------------------- ETAPA 1: BEM-VINDO E CONVITE GRUPO -------------------------
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     #======== GERENCIA O COMANDO /START =============
     user = update.effective_user
     chat_id = update.effective_chat.id
     
-    # Sem proteção - cada /start é um novo começo
+    # Limpa dados de um fluxo anterior para garantir um começo novo
+    context.user_data.clear()
+    context.user_data['chat_id'] = chat_id
     
-    if context.user_data:
-        context.user_data['chat_id'] = chat_id
-    
-    # Armazena o mapeamento de user_id para chat_id para uso posterior
+    # Mapeia user_id para chat_id para o ChatJoinRequestHandler
     if 'user_chat_map' not in context.bot_data:
         context.bot_data['user_chat_map'] = {}
     context.bot_data['user_chat_map'][user.id] = chat_id
     
     logger.info(f"👤 ETAPA 1: Usuário {user.first_name} ({user.id}) iniciou o bot.")
     
+    # Decodifica e salva dados de tracking
     tracking_data = await decode_tracking_data(' '.join(context.args)) if context.args else {'utm_source': 'direct_bot', 'click_id': 'direct'}
-    # Sempre salva o usuário - sem cache
     try:
-        user_data = {'telegram_id': user.id, 'username': user.username or user.first_name, 'first_name': user.first_name, 'last_name': user.last_name or '', 'tracking_data': tracking_data}
-        await http_client.post(f"{API_GATEWAY_URL}/api/users", json=user_data)
-    except Exception as e: logger.error(f"❌ Erro ao salvar usuário {user.id}: {e}")
+        user_data_payload = {'telegram_id': user.id, 'username': user.username or user.first_name, 'first_name': user.first_name, 'last_name': user.last_name or '', 'tracking_data': tracking_data}
+        await http_client.post(f"{API_GATEWAY_URL}/api/users", json=user_data_payload)
+    except Exception as e:
+        logger.error(f"❌ Erro ao salvar usuário {user.id}: {e}")
 
+    # Envia a mensagem inicial
     text = "Meu bem, entra no meu *GRUPINHO GRÁTIS* pra ver daquele jeito q vc gosta 🥵⬇️"
     keyboard = [[InlineKeyboardButton("ENTRAR NO GRUPO 🥵", url=GROUP_INVITE_LINK)]]
     await context.bot.send_photo(chat_id=chat_id, photo=MEDIA_APRESENTACAO, caption=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
-
-    # Agenda a próxima etapa caso o usuário não solicite entrada no grupo
-    if context.job_queue:
-        context.job_queue.run_once(job_etapa2_prompt_previa, CONFIGURACAO_BOT["DELAYS"]["ETAPA_2_PROMPT_PREVIA"], chat_id=chat_id, name=f"job_etapa2_{chat_id}")
-    else:
-        logger.warning("⚠️ job_queue não disponível, executando etapa 2 diretamente")
-        await job_etapa2_prompt_previa(context)
+    
+    # Agenda a próxima etapa (fallback) caso o usuário não solicite entrada no grupo
+    context.job_queue.run_once(job_etapa2_prompt_previa, CONFIGURACAO_BOT["DELAYS"]["ETAPA_1_FALLBACK"], chat_id=chat_id, name=f"job_etapa2_{chat_id}")
     #================= FECHAMENTO ======================
 
 # ------------------------- ETAPA 1.5: PEDIDO DE ENTRADA NO GRUPO (HANDLER) -------------------------
 async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     #======== GERENCIA PEDIDOS DE ENTRADA NO GRUPO =============
     if update.chat_join_request.chat.id != GROUP_ID: return
-
+    
     user_id = update.chat_join_request.from_user.id
-    logger.info(f"🤝 Pedido de entrada recebido de {user_id}.")
+    logger.info(f"🤝 Pedido de entrada no grupo recebido de {user_id}.")
+    
+    chat_id = context.bot_data.get('user_chat_map', {}).get(user_id)
+    if not chat_id:
+        logger.warning(f"⚠️ Não foi possível encontrar o chat_id para o usuário {user_id}. A aprovação deverá ser manual.")
+        return
 
-    user_chat_map = context.bot_data.get('user_chat_map', {})
-    chat_id = user_chat_map.get(user_id)
+    logger.info(f"✅ Avançando funil para {user_id} (chat_id: {chat_id}) após pedido de entrada.")
+    
+    # 1. Cancela o job de fallback da Etapa 1, que chamaria a Etapa 2 padrão.
+    await remove_job_if_exists(f"job_etapa2_{chat_id}", context)
+    
+    # 2. Envia a nova mensagem personalizada com o botão para ver os conteúdos.
+    text = "Jaja te aceito meu amor, mas antes que tal ver uns conteudinhos meus?? 👀"
+    keyboard = [[InlineKeyboardButton("VER CONTEUDINHOS 🔥", callback_data='trigger_etapa3')]]
+    msg = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
+    context.user_data['etapa2_msg_id'] = msg.message_id # Salva ID para poder deletar depois
+    
+    # 3. Agenda a Etapa 3 (Galeria) como fallback, caso o usuário não clique no botão em 20s.
+    context.job_queue.run_once(job_etapa3_galeria, CONFIGURACAO_BOT["DELAYS"]["ETAPA_2_FALLBACK"], chat_id=chat_id, name=f"job_etapa3_{chat_id}")
 
-    if chat_id:
-        logger.info(f"Avançando funil para {user_id} (chat_id: {chat_id}) após pedido de entrada.")
-        
-        # 1. Cancela o job de fallback de 15 segundos
-        await remove_job_if_exists(f"job_etapa2_{chat_id}", context)
-        
-        # 2. Dispara a próxima etapa do funil imediatamente
-        if context.job_queue:
-            context.job_queue.run_once(job_etapa2_prompt_previa, 0, chat_id=chat_id, name=f"job_etapa2_{chat_id}_imediato")
-        else:
-            await job_etapa2_prompt_previa(context)
-        
-        # 3. Agenda a aprovação para ocorrer em background
-        if context.job_queue:
-            context.job_queue.run_once(
-                approve_user_callback, 
-                CONFIGURACAO_BOT["DELAYS"]["APROVACAO_GRUPO_BG"],
-                chat_id=GROUP_ID, 
-                user_id=user_id,
-                name=f"approve_{user_id}"
-            )
-        else:
-            logger.warning("⚠️ job_queue não disponível para aprovação automática")
-    else:
-        logger.warning(f"Não foi possível encontrar o chat_id para o usuário {user_id}. A aprovação deverá ser manual.")
+    # 4. Agenda a aprovação no grupo para ocorrer em background.
+    context.job_queue.run_once(
+        approve_user_callback, 
+        CONFIGURACAO_BOT["DELAYS"]["APROVACAO_GRUPO_BG"],
+        chat_id=GROUP_ID, 
+        user_id=user_id,
+        name=f"approve_{user_id}"
+    )
     #================= FECHAMENTO ======================
 
 async def approve_user_callback(context: ContextTypes.DEFAULT_TYPE):
-    #======== APROVA O USUÁRIO (JOB) =============
+    #======== APROVA O USUÁRIO NO GRUPO (JOB) =============
     job = context.job
     try:
         await context.bot.approve_chat_join_request(chat_id=job.chat_id, user_id=job.user_id)
@@ -229,118 +227,156 @@ async def approve_user_callback(context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"❌ Falha ao aprovar usuário {job.user_id} no grupo {job.chat_id}: {e}")
     #================= FECHAMENTO ======================
 
-# ------------------------- ETAPA 2: PROMPT DE PRÉVIA -------------------------
+# ------------------------- ETAPA 2: PROMPT DE PRÉVIA ("VER CONTEUDINHO") -------------------------
 async def job_etapa2_prompt_previa(context: ContextTypes.DEFAULT_TYPE):
     #======== ENVIA PERGUNTA SOBRE PRÉVIAS =============
     chat_id = context.job.chat_id
+    context.user_data['chat_id'] = chat_id # Garante que o chat_id está no user_data
+    
     logger.info(f"⏰ ETAPA 2: Enviando prompt de prévia para {chat_id}.")
     text = "Quer ver um pedacinho do que te espera... 🔥 (É DE GRAÇA!!!) ⬇️"
     keyboard = [[InlineKeyboardButton("QUERO VER UMA PRÉVIA 🔥🥵", callback_data='trigger_etapa3')]]
-    msg = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
-    # Sem cache - não salva message_id
     
-    if context.job_queue:
-        context.job_queue.run_once(job_etapa3_galeria, CONFIGURACAO_BOT["DELAYS"]["ETAPA_3_GALERIA"], chat_id=chat_id, name=f"job_etapa3_{chat_id}")
-    else:
-        logger.warning("⚠️ job_queue não disponível para etapa 3")
+    msg = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
+    context.user_data['etapa2_msg_id'] = msg.message_id
+    
+    # Agenda a próxima etapa (fallback)
+    context.job_queue.run_once(job_etapa3_galeria, CONFIGURACAO_BOT["DELAYS"]["ETAPA_2_FALLBACK"], chat_id=chat_id, name=f"job_etapa3_{chat_id}")
     #================= FECHAMENTO ======================
 
 # ------------------------- ETAPA 3: GALERIA DE MÍDIAS E OFERTA VIP -------------------------
 async def callback_trigger_etapa3(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    #======== GATILHO MANUAL DA ETAPA 3 =============
+    #======== GATILHO MANUAL DA ETAPA 3 (CLIQUE NO BOTÃO) =============
     query = update.callback_query
     await query.answer()
     chat_id = query.message.chat_id
+    
     logger.info(f"👤 ETAPA 3: Usuário {chat_id} clicou para ver prévias.")
+    
+    # Remove o fallback e a mensagem anterior, depois avança
     await remove_job_if_exists(f"job_etapa3_{chat_id}", context)
-    await delete_message_if_exists(context, f'etapa2_msg_{chat_id}', chat_id)
+    await delete_message_if_exists(context, 'etapa2_msg_id')
     await job_etapa3_galeria(context, chat_id_manual=chat_id)
     #================= FECHAMENTO ======================
 
 async def job_etapa3_galeria(context: ContextTypes.DEFAULT_TYPE, chat_id_manual=None):
     #======== ENVIA GALERIA DE MÍDIAS E OFERTA VIP =============
     chat_id = chat_id_manual or context.job.chat_id
+    context.user_data['chat_id'] = chat_id
+
     logger.info(f"⏰ ETAPA 3: Enviando galeria de mídias para {chat_id}.")
-    await delete_message_if_exists(context, f'etapa2_msg_{chat_id}', chat_id)
+    await delete_message_if_exists(context, 'etapa2_msg_id') # Garante que a msg anterior foi deletada
     
-    media_group = [InputMediaVideo(media=MEDIA_VIDEO_QUENTE), InputMediaPhoto(media=MEDIA_APRESENTACAO), InputMediaPhoto(media=MEDIA_PREVIA_SITE), InputMediaPhoto(media=MEDIA_PROVOCATIVA)]
+    # Envia as 4 mídias
+    media_group = [
+        InputMediaVideo(media=MEDIA_VIDEO_QUENTE),
+        InputMediaPhoto(media=MEDIA_APRESENTACAO),
+        InputMediaPhoto(media=MEDIA_PREVIA_SITE),
+        InputMediaPhoto(media=MEDIA_PROVOCATIVA)
+    ]
     await context.bot.send_media_group(chat_id=chat_id, media=media_group)
     
+    # Envia o texto da oferta VIP
     text_vip = "Gostou do que viu, meu bem 🤭?\n\nTenho muito mais no VIP pra você (TOTALMENTE SEM CENSURA).\n\nVem gozar porra quentinha pra mim🥵💦⬇️"
-    keyboard = [[InlineKeyboardButton("CONHECER O VIP🔥", callback_data='trigger_etapa4')]]
+    keyboard = [[InlineKeyboardButton("QUERO O VIP🔥", callback_data='trigger_etapa4')]]
     msg = await context.bot.send_message(chat_id=chat_id, text=text_vip, reply_markup=InlineKeyboardMarkup(keyboard))
-    # Sem cache - não salva message_id
-
-    if context.job_queue:
-        context.job_queue.run_once(job_etapa4_planos_vip, CONFIGURACAO_BOT["DELAYS"]["ETAPA_4_PLANOS_VIP"], chat_id=chat_id, name=f"job_etapa4_{chat_id}")
-    else:
-        logger.warning("⚠️ job_queue não disponível para etapa 4")
+    context.user_data['etapa3_msg_id'] = msg.message_id
+    
+    # Agenda o remarketing (fallback)
+    context.job_queue.run_once(job_etapa3_remarketing, CONFIGURACAO_BOT["DELAYS"]["ETAPA_3_FALLBACK"], chat_id=chat_id, name=f"job_etapa3_remarketing_{chat_id}")
     #================= FECHAMENTO ======================
 
-# ------------------------- ETAPA 4: PLANOS VIP -------------------------
+async def job_etapa3_remarketing(context: ContextTypes.DEFAULT_TYPE):
+    #======== ENVIA MENSAGEM DE REMARKETING (FALLBACK DA ETAPA 3) =============
+    chat_id = context.job.chat_id
+    logger.info(f"⏰ ETAPA 3 (FALLBACK): Enviando remarketing breve para {chat_id}.")
+    
+    # Deleta a oferta anterior para não poluir o chat
+    await delete_message_if_exists(context, 'etapa3_msg_id')
+    
+    texto_remarketing = "Ei, amor... não some não. Tenho uma surpresinha pra você. Clica aqui pra gente continuar 🔥"
+    keyboard = [[InlineKeyboardButton("CONTINUAR CONVERSANDO 🔥", callback_data='trigger_etapa4')]]
+    await context.bot.send_message(chat_id=chat_id, text=texto_remarketing, reply_markup=InlineKeyboardMarkup(keyboard))
+    #================= FECHAMENTO ======================
+
+# ------------------------- ETAPA 4: PLANOS VIP E DESCONTO -------------------------
 async def callback_trigger_etapa4(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    #======== GATILHO MANUAL DA ETAPA 4 =============
+    #======== GATILHO MANUAL DA ETAPA 4 (CLIQUE NO BOTÃO) =============
     query = update.callback_query
     await query.answer()
     chat_id = query.message.chat_id
+    
     logger.info(f"👤 ETAPA 4: Usuário {chat_id} clicou para conhecer o VIP.")
-    await remove_job_if_exists(f"job_etapa4_{chat_id}", context)
-    await delete_message_if_exists(context, f'etapa3_msg_{chat_id}', chat_id)
+    
+    # Remove o fallback e a mensagem anterior, depois avança
+    await remove_job_if_exists(f"job_etapa3_remarketing_{chat_id}", context)
+    await delete_message_if_exists(context, 'etapa3_msg_id') # Apaga SÓ o texto da oferta
     await job_etapa4_planos_vip(context, chat_id_manual=chat_id)
     #================= FECHAMENTO ======================
     
 async def job_etapa4_planos_vip(context: ContextTypes.DEFAULT_TYPE, chat_id_manual=None):
     #======== MOSTRA OS PLANOS VIP =============
     chat_id = chat_id_manual or context.job.chat_id
-    logger.info(f"⏰ ETAPA 4: Enviando planos VIP para {chat_id}.")
-    await delete_message_if_exists(context, f'etapa3_msg_{chat_id}', chat_id)
+    context.user_data['chat_id'] = chat_id
 
+    logger.info(f"⏰ ETAPA 4: Enviando planos VIP para {chat_id}.")
+    
     texto_planos = "No VIP você vai ver TUDO sem censura, vídeos completos de mim gozando, chamadas privadas e muito mais!\n\n<b>Escolhe o seu acesso especial:</b>"
     keyboard = [[InlineKeyboardButton(p["botao_texto"], callback_data=f"plano:{p['id']}")] for p in VIP_PLANS.values()]
-    msg = await context.bot.send_message(chat_id=chat_id, text=texto_planos, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-    # Sem cache - não salva message_id
-
-    if context.job_queue:
-        context.job_queue.run_once(job_etapa5_remarketing, CONFIGURACAO_BOT["DELAYS"]["ETAPA_5_REMARKETING"], chat_id=chat_id, name=f"job_etapa5_{chat_id}")
-    else:
-        logger.warning("⚠️ job_queue não disponível para etapa 5")
-    #================= FECHAMENTO ======================
-
-# ------------------------- ETAPA 5: REMARKETING E PAGAMENTO -------------------------
-async def job_etapa5_remarketing(context: ContextTypes.DEFAULT_TYPE):
-    #======== ENVIA OFERTA DE REMARKETING =============
-    chat_id = context.job.chat_id
-    logger.info(f"⏰ ETAPA 5: Enviando remarketing para {chat_id}.")
-    await delete_message_if_exists(context, f'etapa4_msg_{chat_id}', chat_id)
     
-    texto_remarketing = "Ei, meu bem... vi que você ficou na dúvida. 🤔\n\nPra te ajudar a decidir, liberei um <b>desconto especial SÓ PRA VOCÊ</b>. Mas corre que é por tempo limitado! 👇"
-    plano_desc = list(REMARKETING_PLAN.values())[0]
-    keyboard = [[InlineKeyboardButton(plano_desc["botao_texto"], callback_data=f"plano:{plano_desc['id']}")] ]
-    await context.bot.send_message(chat_id=chat_id, text=texto_remarketing, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    msg = await context.bot.send_message(chat_id=chat_id, text=texto_planos, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    context.user_data['etapa4_msg_id'] = msg.message_id
+    
+    # Agenda a oferta de desconto (fallback)
+    context.job_queue.run_once(job_etapa4_desconto, CONFIGURACAO_BOT["DELAYS"]["ETAPA_4_FALLBACK"], chat_id=chat_id, name=f"job_etapa4_desconto_{chat_id}")
     #================= FECHAMENTO ======================
 
+async def job_etapa4_desconto(context: ContextTypes.DEFAULT_TYPE):
+    #======== OFERECE DESCONTO DE 20% (FALLBACK DA ETAPA 4) =============
+    chat_id = context.job.chat_id
+    logger.info(f"⏰ ETAPA 4 (FALLBACK): Oferecendo desconto de 20% para {chat_id}.")
+    
+    await delete_message_if_exists(context, 'etapa4_msg_id')
+    
+    texto_desconto = "Ei, meu bem... vi que você ficou na dúvida. 🤔\n\nPra te ajudar a decidir, liberei um <b>desconto especial de 20% SÓ PRA VOCÊ</b>. Mas corre que é por tempo limitado! 👇"
+    plano_desc = REMARKETING_PLANS["plano_desc_20_off"]
+    keyboard = [[InlineKeyboardButton(plano_desc["botao_texto"], callback_data=f"plano:{plano_desc['id']}")] ]
+    
+    await context.bot.send_message(chat_id=chat_id, text=texto_desconto, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    #================= FECHAMENTO ======================
+
+# ------------------------- ETAPA 5: PROCESSAMENTO DO PAGAMENTO -------------------------
 async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    #======== PROCESSA PAGAMENTO DO PLANO =============
+    #======== PROCESSA PAGAMENTO DO PLANO SELECIONADO =============
     query = update.callback_query
     await query.answer()
     chat_id = query.message.chat_id
     user_id = query.from_user.id
     
-    await remove_job_if_exists(f"job_etapa5_{chat_id}", context)
-    await delete_message_if_exists(context, f'etapa4_msg_{chat_id}', chat_id)
+    # Remove o job de desconto, pois o usuário já escolheu um plano
+    await remove_job_if_exists(f"job_etapa4_desconto_{chat_id}", context)
+    # Remove a mensagem com os botões de plano
+    await delete_message_if_exists(context, 'etapa4_msg_id')
     
     plano_id = query.data.split(":")[1]
-    plano = next((p for p in list(VIP_PLANS.values()) + list(REMARKETING_PLAN.values()) if p["id"] == plano_id), None)
-    if not plano: return
+    
+    # Junta todos os planos disponíveis (normais e de remarketing) para procurar
+    todos_os_planos = {**VIP_PLANS, **REMARKETING_PLANS}
+    plano_selecionado = next((p for p in todos_os_planos.values() if p["id"] == plano_id), None)
 
-    logger.info(f"💳 Gerando PIX para {user_id} - Plano: {plano['nome']}")
+    if not plano_selecionado: 
+        logger.warning(f"⚠️ Plano com id '{plano_id}' não encontrado para o usuário {user_id}.")
+        return
+
+    logger.info(f"💳 Gerando PIX para {user_id} - Plano: {plano_selecionado['nome']}")
     msg_loading = await context.bot.send_message(chat_id=chat_id, text="💎 Gerando seu PIX... aguarde! ⏳")
     
     try:
-        pix_data = {'user_id': user_id, 'valor': plano['valor'], 'plano': plano['nome']}
+        pix_data = {'user_id': user_id, 'valor': plano_selecionado['valor'], 'plano': plano_selecionado['nome']}
         response = await http_client.post(f"{API_GATEWAY_URL}/api/pix/gerar", json=pix_data)
+        
         if not (response.status_code == 200 and response.json().get('success')):
-            raise Exception(f"API PIX falhou: {response.status_code}")
+            raise Exception(f"API PIX falhou: {response.status_code} - {response.text}")
         
         result = response.json()
         await msg_loading.delete()
@@ -348,43 +384,51 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
         pix_copia_cola = result['pix_copia_cola']
         qr_code_url = result.get('qr_code') or f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={pix_copia_cola}"
         
-        caption = f"📸 <b>Pague utilizando o QR Code</b>\n💸 <b>Pague por Pix copia e cola:</b>\n<blockquote><code>{escape(pix_copia_cola)}</code></blockquote><i>(Clique para copiar)</i>\n🎯 <b>Plano:</b> {escape(plano['nome'])}\n💰 <b>Valor: R$ {plano['valor']:.2f}</b>"
+        caption = (
+            f"📸 <b>Pague utilizando o QR Code</b>\n"
+            f"💸 <b>Pague por Pix copia e cola:</b>\n"
+            f"<blockquote><code>{escape(pix_copia_cola)}</code></blockquote>"
+            f"<i>(Clique para copiar)</i>\n"
+            f"🎯 <b>Plano:</b> {escape(plano_selecionado['nome'])}\n"
+            f"💰 <b>Valor: R$ {plano_selecionado['valor']:.2f}</b>"
+        )
         await context.bot.send_photo(chat_id=chat_id, photo=qr_code_url, caption=caption, parse_mode='HTML')
     except Exception as e:
         logger.error(f"❌ Erro CRÍTICO ao processar pagamento para {user_id}: {e}")
-        await msg_loading.edit_text("❌ Um erro inesperado ocorreu. Tente novamente mais tarde.")
+        await msg_loading.edit_text("❌ Um erro inesperado ocorreu. Por favor, tente novamente mais tarde ou escolha outro plano.")
     #================= FECHAMENTO ======================
+
 
 # ==============================================================================
 # 4. FUNÇÃO PRINCIPAL E EXECUÇÃO DO BOT
 # ==============================================================================
-
 def main():
     #======== INICIALIZA E EXECUTA O BOT =============
     required_vars = ['TELEGRAM_BOT_TOKEN', 'API_GATEWAY_URL', 'GRUPO_GRATIS_ID', 'GRUPO_GRATIS_INVITE_LINK', 'MEDIA_APRESENTACAO', 'MEDIA_VIDEO_QUENTE', 'MEDIA_PREVIA_SITE', 'MEDIA_PROVOCATIVA']
     if any(not os.getenv(var) for var in required_vars):
-        logger.critical(f"❌ ERRO CRÍTICO: Variáveis de ambiente obrigatórias não configuradas.")
+        logger.critical("❌ ERRO CRÍTICO: Variáveis de ambiente obrigatórias não configuradas. Verifique o arquivo .env")
         return
-
-    logger.info("🤖 === BOT COM FLUXO COMPLETO E APROVAÇÃO AUTOMÁTICA INICIANDO ===")
+        
+    logger.info("🤖 === BOT COM FUNIL OTIMIZADO INICIANDO ===")
     
     application = Application.builder().token(BOT_TOKEN).build()
     
-    # Registra os handlers de comando, callbacks e pedidos de entrada
+    # Registra os handlers
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(ChatJoinRequestHandler(handle_join_request))
     application.add_handler(CallbackQueryHandler(callback_trigger_etapa3, pattern='^trigger_etapa3$'))
     application.add_handler(CallbackQueryHandler(callback_trigger_etapa4, pattern='^trigger_etapa4$'))
     application.add_handler(CallbackQueryHandler(callback_processar_plano, pattern='^plano:'))
     
-    logger.info("🚀 Bot iniciado com sucesso!")
+    logger.info("🚀 Bot iniciado com sucesso! Aguardando interações...")
     
     try:
         # Adicionado 'chat_join_request' aos updates permitidos
         application.run_polling(allowed_updates=['message', 'callback_query', 'chat_join_request'])
     finally:
+        # Garante que o cliente HTTP seja fechado corretamente ao encerrar o bot
         asyncio.run(http_client.aclose())
-        logger.info("🔒 Cliente HTTP fechado.")
+        logger.info("🔒 Cliente HTTP e bot encerrados.")
     #================= FECHAMENTO ======================
 
 if __name__ == '__main__':
