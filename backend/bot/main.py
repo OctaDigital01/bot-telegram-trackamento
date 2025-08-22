@@ -152,6 +152,37 @@ async def verificar_pix_existente(user_id: int, plano_id: str):
     return None
     #================= FECHAMENTO ======================
 
+def calcular_tempo_restante(pix_data: dict) -> int:
+    #======== CALCULA TEMPO RESTANTE EM MINUTOS PARA PIX =============
+    try:
+        from datetime import datetime, timedelta
+        
+        created_at = pix_data.get('created_at')
+        if not created_at:
+            logger.warning("⚠️ PIX sem data de criação")
+            return 0
+            
+        # Converte string para datetime se necessário
+        if isinstance(created_at, str):
+            # Remove 'Z' e converte para datetime
+            created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+        
+        # Calcula tempo de expiração (1 hora após criação)
+        expire_time = created_at + timedelta(hours=1)
+        now = datetime.now(created_at.tzinfo) if created_at.tzinfo else datetime.now()
+        tempo_restante = expire_time - now
+        
+        # Retorna minutos restantes (0 se expirado)
+        minutos_restantes = max(0, int(tempo_restante.total_seconds() / 60))
+        
+        logger.info(f"⏰ Tempo restante calculado: {minutos_restantes} minutos")
+        return minutos_restantes
+        
+    except Exception as e:
+        logger.error(f"❌ Erro calculando tempo restante: {e}")
+        return 0
+    #================= FECHAMENTO ======================
+
 async def invalidar_pix_usuario(user_id: int):
     #======== INVALIDA TODOS OS PIX PENDENTES DO USUÁRIO =============
     try:
@@ -539,34 +570,46 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
         await context.bot.send_message(chat_id, "❌ Ops! Ocorreu um erro. Por favor, tente novamente.")
         return
 
-    # Lógica para reutilizar ou gerar novo PIX
+    # LÓGICA DE REUTILIZAÇÃO DE PIX IMPLEMENTADA
+    logger.info(f"🔍 Verificando PIX existente para usuário {user_id}, plano {plano_id}")
     pix_existente = await verificar_pix_existente(user_id, plano_id)
+    
     if pix_existente:
-        logger.info(f"♻️ Reutilizando PIX para {user_id} - Plano: {plano_selecionado['nome']}")
-        await enviar_mensagem_pix(context, chat_id, user_id, plano_selecionado, pix_existente, is_reused=True)
-    else:
-        logger.info(f"💳 Gerando PIX NOVO para {user_id} - Plano: {plano_selecionado['nome']}")
-        msg_loading = await context.bot.send_message(chat_id=chat_id, text="💎 Gerando seu PIX... aguarde! ⏳")
-        context.user_data['loading_msg'] = msg_loading.message_id
-        try:
-            # Não envia customer - deixa a API gerar dados únicos automaticamente
-            pix_data = {
-                'user_id': user_id, 
-                'valor': plano_selecionado['valor'], 
-                'plano_id': plano_id
-            }
-            response = await http_client.post(f"{API_GATEWAY_URL}/api/pix/gerar", json=pix_data)
-            response.raise_for_status()
-            result = response.json()
-            if not result.get('success') or not result.get('pix_copia_cola'):
-                raise Exception(f"API PIX retornou erro ou dados incompletos: {result.get('error', 'Erro desconhecido')}")
-            
-            await delete_previous_message(context, 'loading_msg', chat_id)
-            await enviar_mensagem_pix(context, chat_id, user_id, plano_selecionado, result)
-        except Exception as e:
-            logger.error(f"❌ Erro CRÍTICO ao processar pagamento para {user_id}: {e}")
-            await delete_previous_message(context, 'loading_msg', chat_id)
-            await context.bot.send_message(chat_id, "❌ Um erro inesperado ocorreu. Por favor, tente novamente mais tarde.")
+        # Calcula tempo restante
+        tempo_restante = calcular_tempo_restante(pix_existente)
+        
+        if tempo_restante > 0:  # PIX ainda válido
+            logger.info(f"♻️ REUTILIZANDO PIX para {user_id} - Plano: {plano_selecionado['nome']} - Tempo restante: {tempo_restante} min")
+            await enviar_mensagem_pix(context, chat_id, user_id, plano_selecionado, pix_existente, is_reused=True)
+            return
+        else:
+            logger.info(f"⏰ PIX expirado para {user_id} - Gerando novo PIX")
+            # PIX expirado, invalida e gera novo
+            await invalidar_pix_usuario(user_id)
+    
+    # Se chegou aqui, precisa GERAR NOVO PIX
+    logger.info(f"💳 Gerando PIX NOVO para {user_id} - Plano: {plano_selecionado['nome']}")
+    msg_loading = await context.bot.send_message(chat_id=chat_id, text="💎 Gerando seu PIX... aguarde! ⏳")
+    context.user_data['loading_msg'] = msg_loading.message_id
+    try:
+        # Não envia customer - deixa a API gerar dados únicos automaticamente
+        pix_data = {
+            'user_id': user_id, 
+            'valor': plano_selecionado['valor'], 
+            'plano_id': plano_id
+        }
+        response = await http_client.post(f"{API_GATEWAY_URL}/api/pix/gerar", json=pix_data)
+        response.raise_for_status()
+        result = response.json()
+        if not result.get('success') or not result.get('pix_copia_cola'):
+            raise Exception(f"API PIX retornou erro ou dados incompletos: {result.get('error', 'Erro desconhecido')}")
+        
+        await delete_previous_message(context, 'loading_msg', chat_id)
+        await enviar_mensagem_pix(context, chat_id, user_id, plano_selecionado, result)
+    except Exception as e:
+        logger.error(f"❌ Erro CRÍTICO ao processar pagamento para {user_id}: {e}")
+        await delete_previous_message(context, 'loading_msg', chat_id)
+        await context.bot.send_message(chat_id, "❌ Um erro inesperado ocorreu. Por favor, tente novamente mais tarde.")
     #================= FECHAMENTO ======================
 
 async def enviar_mensagem_pix(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int, plano: dict, pix_data: dict, is_reused: bool = False):
@@ -579,6 +622,7 @@ async def enviar_mensagem_pix(context: ContextTypes.DEFAULT_TYPE, chat_id: int, 
     qr_code_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={quote(pix_copia_cola)}"
     logger.info(f"🔲 QR Code gerado: {qr_code_url[:80]}...")
     
+    # Mensagem base do PIX
     caption = (
         f"💎 <b>Seu PIX está aqui, meu amor!</b>\n\n"
         f"📸 <b>Pague utilizando o QR Code</b>\n"
@@ -588,6 +632,16 @@ async def enviar_mensagem_pix(context: ContextTypes.DEFAULT_TYPE, chat_id: int, 
         f"🎯 <b>Plano:</b> {escape(plano['nome'])}\n"
         f"💰 <b>Valor: R$ {plano['valor']:.2f}</b>"
     )
+    
+    # Se PIX foi reutilizado, adiciona informação de tempo restante
+    if is_reused:
+        tempo_restante = calcular_tempo_restante(pix_data)
+        if tempo_restante > 0:
+            caption += f"\n\n⏰ <b>PIX reutilizado - Tempo restante: {tempo_restante} minutos</b>"
+            logger.info(f"♻️ Exibindo PIX reutilizado com {tempo_restante} minutos restantes")
+        else:
+            caption += f"\n\n⚠️ <b>PIX reutilizado - Finalizando em breve</b>"
+            logger.warning(f"⚠️ PIX reutilizado mas tempo quase expirado")
     keyboard = [
         [InlineKeyboardButton("✅ JÁ PAGUEI", callback_data=f"ja_paguei:{plano['id']}")],
         [InlineKeyboardButton("🔄 ESCOLHER OUTRO PLANO", callback_data="escolher_outro_plano")]
@@ -613,16 +667,19 @@ async def enviar_mensagem_pix(context: ContextTypes.DEFAULT_TYPE, chat_id: int, 
 
     # Agenda o job de timeout
     await remove_job_if_exists(f"timeout_pix_{user_id}", context)
-    timeout_seconds = CONFIGURACAO_BOT["DELAYS"]["PIX_TIMEOUT"]
+    
     if is_reused:
-        try:
-            tempo_restante_str = pix_data.get('tempo_restante', '60')
-            timeout_seconds = int(tempo_restante_str.split()[0]) * 60 if tempo_restante_str != '??' else timeout_seconds
-        except (ValueError, IndexError):
-            logger.warning("Não foi possível parsear o tempo restante do PIX reutilizado.")
+        # Para PIX reutilizado, usa o tempo restante real
+        tempo_restante_min = calcular_tempo_restante(pix_data)
+        timeout_seconds = max(60, tempo_restante_min * 60)  # Mínimo de 1 minuto
+        logger.info(f"⏰ PIX reutilizado - Timeout ajustado para {tempo_restante_min} minutos")
+    else:
+        # Para PIX novo, usa timeout padrão (1 hora)
+        timeout_seconds = CONFIGURACAO_BOT["DELAYS"]["PIX_TIMEOUT"]
+        logger.info(f"⏰ PIX novo - Timeout padrão de {timeout_seconds/60:.0f} minutos")
 
     context.job_queue.run_once(job_timeout_pix, timeout_seconds, chat_id=chat_id, user_id=user_id, name=f"timeout_pix_{user_id}")
-    logger.info(f"⏰ Job de timeout PIX agendado para {user_id} em {timeout_seconds/60:.0f} minutos.")
+    logger.info(f"⏰ Job de timeout PIX agendado para {user_id} em {timeout_seconds/60:.1f} minutos.")
     #================= FECHAMENTO ======================
 
 async def callback_ja_paguei(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -755,6 +812,8 @@ async def main():
         logger.info("   - Fallback inteligente para último tracking")
         logger.info("   - Logs detalhados para debug")
         logger.info("   - Prevenção de conflitos 409")
+        logger.info("   - Sistema de reutilização de PIX por plano")
+        logger.info("   - Timeout inteligente baseado em tempo restante")
         
         # Mantém o script rodando indefinidamente
         await asyncio.Event().wait()
