@@ -762,9 +762,8 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
                 await enviar_mensagem_pix(context, chat_id, user_id, plano_selecionado, pix_existente, is_reused=True)
                 return
             else:
-                logger.info(f"❌ PIX EXPIRADO (0 minutos) para {user_id} - Gerando novo PIX")
-                # PIX expirado, invalida e gera novo
-                await invalidar_pix_usuario(user_id)
+                logger.info(f"❌ PIX EXPIRADO (0 minutos) para plano {plano_id} do usuário {user_id}")
+                logger.info(f"🔄 PIX expirado será ignorado - gerando PIX novo apenas para este plano")
         else:
             logger.info(f"🚫 NENHUM PIX encontrado para {user_id}, plano {plano_id}")
     
