@@ -328,6 +328,71 @@ def save_user():
         logger.error(f"❌ Erro ao salvar usuário: {e}")
         return jsonify({'success': False, 'error': 'Erro interno do servidor'}), 500
 
+@app.route('/api/tracking/save', methods=['POST', 'OPTIONS'])
+def save_tracking():
+    """Salva dados de tracking (mapeamento de ID)."""
+    # Handle preflight OPTIONS request
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        return response
+        
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'Corpo da requisição não é um JSON válido'}), 400
+        
+        safe_id = data.get('safe_id')
+        original_data = data.get('original_data')
+        
+        if not all([safe_id, original_data]):
+            return jsonify({'success': False, 'error': 'Campos obrigatórios ausentes: safe_id, original_data'}), 400
+        
+        if not db:
+            return jsonify({'success': False, 'error': 'Serviço indisponível (sem conexão com o banco de dados)'}), 503
+        
+        # Salva tracking mapping
+        db.save_tracking_mapping(safe_id, original_data)
+        logger.info(f"✅ Tracking mapping {safe_id} salvo com sucesso")
+        
+        return jsonify({
+            'success': True, 
+            'message': 'Tracking salvo com sucesso',
+            'safe_id': safe_id
+        })
+            
+    except Exception as e:
+        logger.error(f"❌ Erro ao salvar tracking: {e}")
+        return jsonify({'success': False, 'error': 'Erro interno do servidor'}), 500
+
+@app.route('/api/tracking/get/<safe_id>', methods=['GET'])
+def get_tracking(safe_id):
+    """Busca dados de tracking por safe_id."""
+    try:
+        if not db:
+            return jsonify({'success': False, 'error': 'Serviço indisponível (sem conexão com o banco de dados)'}), 503
+        
+        # Busca tracking mapping
+        tracking = db.get_tracking_mapping(safe_id)
+        
+        if tracking:
+            logger.info(f"✅ Tracking {safe_id} encontrado")
+            return jsonify({
+                'success': True,
+                'original': tracking.get('original_data'),
+                'created_at': tracking.get('created_at'),
+                'accessed_at': tracking.get('accessed_at')
+            })
+        else:
+            logger.warning(f"⚠️ Tracking {safe_id} não encontrado")
+            return jsonify({'success': False, 'error': 'Tracking não encontrado'}), 404
+            
+    except Exception as e:
+        logger.error(f"❌ Erro ao buscar tracking {safe_id}: {e}")
+        return jsonify({'success': False, 'error': 'Erro interno do servidor'}), 500
+
 @app.route('/api/pix/verificar/<int:user_id>/<plano_id>', methods=['GET'])
 def verificar_pix_existente(user_id, plano_id):
     """Verifica se existe PIX válido para o usuário e plano."""
@@ -385,19 +450,33 @@ def tribopay_webhook():
         logger.info(f"📥 Webhook da TriboPay recebido.")
         logger.debug(f"Webhook Payload: {json.dumps(webhook_data)}")
 
-        # CORREÇÃO CRÍTICA: Verifica se transaction é string ou objeto
+        # CORREÇÃO CRÍTICA: Múltiplos formatos de webhook da TriboPay
         transaction_data = webhook_data.get('transaction')
-        if isinstance(transaction_data, str):
-            # Se for string, converte para dict
+        transaction_id = None
+        
+        # Formato 1: transaction é objeto com id/hash
+        if isinstance(transaction_data, dict):
+            transaction_id = transaction_data.get('id') or transaction_data.get('hash')
+        # Formato 2: transaction é string JSON
+        elif isinstance(transaction_data, str):
             try:
                 transaction_data = json.loads(transaction_data)
+                transaction_id = transaction_data.get('id') or transaction_data.get('hash')
             except json.JSONDecodeError:
-                logger.error(f"❌ transaction_data é string mas não é JSON válido: {transaction_data}")
-                return jsonify({'status': 'erro', 'reason': 'transaction data inválido'}), 400
-        elif not isinstance(transaction_data, dict):
-            transaction_data = {}
-        
-        transaction_id = transaction_data.get('id') or transaction_data.get('hash')
+                # Formato 3: transaction é diretamente o hash ID
+                if len(transaction_data) > 5:  # Assumindo que hash tem pelo menos 6 caracteres
+                    transaction_id = transaction_data
+                    logger.info(f"🔍 Transaction data é hash direto: {transaction_data}")
+                else:
+                    logger.error(f"❌ transaction_data é string mas não é JSON válido nem hash: {transaction_data}")
+                    return jsonify({'status': 'erro', 'reason': 'transaction data inválido'}), 400
+        # Formato 4: ID direto no root do webhook
+        elif not transaction_data:
+            transaction_id = webhook_data.get('id') or webhook_data.get('hash')
+            
+        # Formato 5: Fallback - tenta outros campos comuns da TriboPay
+        if not transaction_id:
+            transaction_id = webhook_data.get('transaction_id') or webhook_data.get('txn_id')
         
         if not transaction_id:
             logger.warning("⚠️ Webhook recebido sem 'transaction.id' ou 'transaction.hash'. Ignorando.")

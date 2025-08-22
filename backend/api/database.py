@@ -132,40 +132,75 @@ class DatabaseManager:
 
     def save_user(self, telegram_id, username, first_name, last_name, tracking_data):
         """Salvar/atualizar usuário"""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO bot_users 
-                (telegram_id, username, first_name, last_name, click_id, utm_source, utm_medium, utm_campaign, utm_term, utm_content)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (telegram_id) 
-                DO UPDATE SET 
-                    username = EXCLUDED.username,
-                    first_name = EXCLUDED.first_name,
-                    last_name = EXCLUDED.last_name,
-                    click_id = EXCLUDED.click_id,
-                    utm_source = EXCLUDED.utm_source,
-                    utm_medium = EXCLUDED.utm_medium,
-                    utm_campaign = EXCLUDED.utm_campaign,
-                    utm_term = EXCLUDED.utm_term,
-                    utm_content = EXCLUDED.utm_content,
-                    updated_at = CURRENT_TIMESTAMP
-            """, (
-                telegram_id, username, first_name, last_name,
-                tracking_data.get('click_id'),
-                tracking_data.get('utm_source'),
-                tracking_data.get('utm_medium'),
-                tracking_data.get('utm_campaign'),
-                tracking_data.get('utm_term'),
-                tracking_data.get('utm_content')
-            ))
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO bot_users 
+                    (telegram_id, username, first_name, last_name, click_id, utm_source, utm_medium, utm_campaign, utm_term, utm_content)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (telegram_id) 
+                    DO UPDATE SET 
+                        username = EXCLUDED.username,
+                        first_name = EXCLUDED.first_name,
+                        last_name = EXCLUDED.last_name,
+                        click_id = EXCLUDED.click_id,
+                        utm_source = EXCLUDED.utm_source,
+                        utm_medium = EXCLUDED.utm_medium,
+                        utm_campaign = EXCLUDED.utm_campaign,
+                        utm_term = EXCLUDED.utm_term,
+                        utm_content = EXCLUDED.utm_content,
+                        updated_at = CURRENT_TIMESTAMP
+                """, (
+                    telegram_id, username, first_name, last_name,
+                    tracking_data.get('click_id'),
+                    tracking_data.get('utm_source'),
+                    tracking_data.get('utm_medium'),
+                    tracking_data.get('utm_campaign'),
+                    tracking_data.get('utm_term'),
+                    tracking_data.get('utm_content')
+                ))
+                logger.info(f"✅ Usuário {telegram_id} salvo/atualizado com sucesso no PostgreSQL")
+                return True
+        except Exception as e:
+            logger.error(f"❌ Erro salvando usuário {telegram_id}: {e}")
+            return False
 
     def get_user(self, telegram_id):
         """Buscar usuário por telegram_id"""
-        with self.get_connection() as conn:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            cursor.execute("SELECT * FROM bot_users WHERE telegram_id = %s", (telegram_id,))
-            return cursor.fetchone()
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                cursor.execute("SELECT * FROM bot_users WHERE telegram_id = %s", (telegram_id,))
+                user = cursor.fetchone()
+                
+                if user:
+                    # Converte para formato esperado pela API com tracking_data
+                    tracking_data = {
+                        'click_id': user.get('click_id'),
+                        'utm_source': user.get('utm_source'),
+                        'utm_medium': user.get('utm_medium'),
+                        'utm_campaign': user.get('utm_campaign'),
+                        'utm_term': user.get('utm_term'),
+                        'utm_content': user.get('utm_content')
+                    }
+                    # Remove valores None do tracking_data
+                    tracking_data = {k: v for k, v in tracking_data.items() if v is not None}
+                    
+                    return {
+                        'id': user.get('id'),
+                        'telegram_id': user.get('telegram_id'),
+                        'username': user.get('username'),
+                        'first_name': user.get('first_name'),
+                        'last_name': user.get('last_name'),
+                        'tracking_data': tracking_data,
+                        'created_at': user.get('created_at'),
+                        'updated_at': user.get('updated_at')
+                    }
+                return None
+        except Exception as e:
+            logger.error(f"❌ Erro buscando usuário {telegram_id}: {e}")
+            return None
 
     def save_tracking_mapping(self, safe_id, original_data):
         """Salvar mapeamento de tracking ID"""

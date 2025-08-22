@@ -676,8 +676,13 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
         pix_data = {
             'user_id': user_id, 
             'valor': plano_selecionado['valor'], 
-            'plano': plano_selecionado['nome'],
-            'plano_id': plano_id
+            'plano_id': plano_id,
+            'customer': {
+                'name': f'Usuario {user_id}',
+                'email': f'user{user_id}@telegram.bot',
+                'document': f'{user_id:011d}'[-11:],
+                'phone_number': f'11{user_id:09d}'[-11:]
+            }
         }
         logger.info(f"🚀 Enviando dados PIX para API: {pix_data}")
         
