@@ -100,27 +100,43 @@ http_client = httpx.AsyncClient(
 # ==============================================================================
 
 #======== DELETA MENSAGEM ANTERIOR USANDO user_data (UNIFICADO) =============
-async def delete_previous_message(context: ContextTypes.DEFAULT_TYPE, message_key: str):
+async def delete_previous_message(context: ContextTypes.DEFAULT_TYPE, message_key: str, chat_id = None):
     """
-    Deleta uma mensagem anterior cujo ID está salvo em context.user_data.
+    Deleta uma mensagem anterior cujo ID está salvo em context.user_data ou context.bot_data.
     """
-    if message_key in context.user_data:
-        chat_id = context.user_data.get('chat_id')
+    message_id = None
+    found_in = None
+    
+    # Tenta encontrar no user_data primeiro
+    if context.user_data and message_key in context.user_data:
+        chat_id = chat_id or context.user_data.get('chat_id')
         message_id = context.user_data[message_key]
-        if chat_id and message_id:
-            try:
-                await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-                logger.info(f"🗑️ Mensagem '{message_key}' (ID: {message_id}) deletada com sucesso.")
-            except BadRequest as e:
-                if "message to delete not found" in str(e).lower():
-                    logger.warning(f"⚠️ Mensagem '{message_key}' (ID: {message_id}) já havia sido deletada.")
-                else:
-                    logger.warning(f"⚠️ Erro ao deletar mensagem '{message_key}' (ID: {message_id}): {e}")
-            except Exception as e:
-                logger.error(f"❌ Erro crítico ao deletar mensagem '{message_key}' (ID: {message_id}): {e}")
-            finally:
-                # Remove a chave independentemente do resultado para evitar tentativas futuras
+        found_in = 'user_data'
+    # Se não encontrou, tenta no bot_data
+    elif chat_id and 'message_ids' in context.bot_data:
+        bot_key = f"{message_key}_{chat_id}"
+        if bot_key in context.bot_data['message_ids']:
+            message_id = context.bot_data['message_ids'][bot_key]
+            found_in = 'bot_data'
+    
+    if chat_id and message_id:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+            logger.info(f"🗑️ Mensagem '{message_key}' (ID: {message_id}) deletada com sucesso.")
+        except BadRequest as e:
+            if "message to delete not found" in str(e).lower():
+                logger.warning(f"⚠️ Mensagem '{message_key}' (ID: {message_id}) já havia sido deletada.")
+            else:
+                logger.warning(f"⚠️ Erro ao deletar mensagem '{message_key}' (ID: {message_id}): {e}")
+        except Exception as e:
+            logger.error(f"❌ Erro crítico ao deletar mensagem '{message_key}' (ID: {message_id}): {e}")
+        finally:
+            # Remove a chave do local correto
+            if found_in == 'user_data' and context.user_data:
                 del context.user_data[message_key]
+            elif found_in == 'bot_data':
+                bot_key = f"{message_key}_{chat_id}"
+                del context.bot_data['message_ids'][bot_key]
 #================= FECHAMENTO ======================
 
 async def verificar_pix_existente(user_id: int, plano_id: str):
@@ -357,7 +373,11 @@ async def job_etapa2_prompt_previa(context: ContextTypes.DEFAULT_TYPE):
     text = "Quer ver um pedacinho do que te espera... 🔥 (É DE GRAÇA!!!) ⬇️"
     keyboard = [[InlineKeyboardButton("QUERO VER UMA PRÉVIA 🔥🥵", callback_data='trigger_etapa3')]]
     msg = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
-    context.user_data['etapa2_msg'] = msg.message_id
+    
+    # Salva no bot_data para jobs que não tem user_data
+    if 'message_ids' not in context.bot_data:
+        context.bot_data['message_ids'] = {}
+    context.bot_data['message_ids'][f'etapa2_msg_{chat_id}'] = msg.message_id
     
     context.job_queue.run_once(job_etapa3_galeria, CONFIGURACAO_BOT["DELAYS"]["ETAPA_2_FALLBACK"], chat_id=chat_id, name=f"job_etapa3_{chat_id}", data={'chat_id': chat_id})
     #================= FECHAMENTO ======================
@@ -382,7 +402,7 @@ async def job_etapa3_galeria(context: ContextTypes.DEFAULT_TYPE, chat_id_manual=
     chat_id = chat_id_manual or context.job.data['chat_id']
     logger.info(f"⏰ ETAPA 3: Enviando galeria de mídias para {chat_id}.")
     
-    await delete_previous_message(context, 'etapa2_msg')
+    await delete_previous_message(context, 'etapa2_msg', chat_id)
     
     media_group = [
         InputMediaVideo(media=MEDIA_VIDEO_QUENTE),
@@ -395,7 +415,13 @@ async def job_etapa3_galeria(context: ContextTypes.DEFAULT_TYPE, chat_id_manual=
     text_vip = "Gostou do que viu, meu bem 🤭?\n\nTenho muito mais no VIP pra você (TOTALMENTE SEM CENSURA).\n\nVem gozar porra quentinha pra mim🥵💦⬇️"
     keyboard = [[InlineKeyboardButton("QUERO O VIP🔥", callback_data='trigger_etapa4')]]
     msg = await context.bot.send_message(chat_id=chat_id, text=text_vip, reply_markup=InlineKeyboardMarkup(keyboard))
-    context.user_data['etapa3_msg'] = msg.message_id
+    
+    # Salva tanto no user_data quanto no bot_data para funcionar em ambos contextos
+    if context.user_data is not None:
+        context.user_data['etapa3_msg'] = msg.message_id
+    if 'message_ids' not in context.bot_data:
+        context.bot_data['message_ids'] = {}
+    context.bot_data['message_ids'][f'etapa3_msg_{chat_id}'] = msg.message_id
     
     context.job_queue.run_once(job_etapa3_remarketing, CONFIGURACAO_BOT["DELAYS"]["ETAPA_3_FALLBACK"], chat_id=chat_id, name=f"job_etapa3_remarketing_{chat_id}", data={'chat_id': chat_id})
     #================= FECHAMENTO ======================
@@ -405,7 +431,7 @@ async def job_etapa3_remarketing(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.data['chat_id']
     logger.info(f"⏰ ETAPA 3 (FALLBACK): Enviando remarketing breve para {chat_id}.")
     
-    await delete_previous_message(context, 'etapa3_msg')
+    await delete_previous_message(context, 'etapa3_msg', chat_id)
     
     texto_remarketing = "Ei, amor... não some não. Tenho uma surpresinha pra você. Clica aqui pra gente continuar 🔥"
     keyboard = [[InlineKeyboardButton("CONTINUAR CONVERSANDO 🔥", callback_data='trigger_etapa4')]]
@@ -443,7 +469,13 @@ async def job_etapa4_planos_vip(context: ContextTypes.DEFAULT_TYPE, chat_id_manu
     )
     keyboard = [[InlineKeyboardButton(p["botao_texto"], callback_data=f"plano:{p['id']}")] for p in VIP_PLANS.values()]
     msg = await context.bot.send_message(chat_id=chat_id, text=texto_planos, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-    context.user_data['etapa4_msg'] = msg.message_id
+    
+    # Salva tanto no user_data quanto no bot_data para funcionar em ambos contextos
+    if context.user_data is not None:
+        context.user_data['etapa4_msg'] = msg.message_id
+    if 'message_ids' not in context.bot_data:
+        context.bot_data['message_ids'] = {}
+    context.bot_data['message_ids'][f'etapa4_msg_{chat_id}'] = msg.message_id
     
     context.job_queue.run_once(job_etapa4_desconto, CONFIGURACAO_BOT["DELAYS"]["ETAPA_4_FALLBACK"], chat_id=chat_id, name=f"job_etapa4_desconto_{chat_id}", data={'chat_id': chat_id})
     #================= FECHAMENTO ======================
@@ -453,7 +485,7 @@ async def job_etapa4_desconto(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.data['chat_id']
     logger.info(f"⏰ ETAPA 4 (FALLBACK): Oferecendo desconto para {chat_id}.")
     
-    await delete_previous_message(context, 'etapa4_msg')
+    await delete_previous_message(context, 'etapa4_msg', chat_id)
     
     texto_desconto = "Ei, meu bem... vi que você ficou na dúvida. 🤔\n\nPra te ajudar a decidir, liberei um <b>desconto especial SÓ PRA VOCÊ</b>. Mas corre que é por tempo limitado! 👇"
     plano_desc = REMARKETING_PLANS["plano_desc_20_off"]
@@ -500,11 +532,11 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
             if not result.get('success') or not result.get('pix_copia_cola'):
                 raise Exception(f"API PIX retornou erro ou dados incompletos: {result.get('error', 'Erro desconhecido')}")
             
-            await delete_previous_message(context, 'loading_msg')
+            await delete_previous_message(context, 'loading_msg', chat_id)
             await enviar_mensagem_pix(context, chat_id, user_id, plano_selecionado, result)
         except Exception as e:
             logger.error(f"❌ Erro CRÍTICO ao processar pagamento para {user_id}: {e}")
-            await delete_previous_message(context, 'loading_msg')
+            await delete_previous_message(context, 'loading_msg', chat_id)
             await context.bot.send_message(chat_id, "❌ Um erro inesperado ocorreu. Por favor, tente novamente mais tarde.")
     #================= FECHAMENTO ======================
 
