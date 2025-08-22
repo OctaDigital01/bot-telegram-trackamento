@@ -37,6 +37,89 @@ except Exception as e:
     logger.error(f"❌ Erro ao conectar PostgreSQL: {e}")
     db = None
 
+# Cache de produtos TriboPay (evita flooding da API)
+TRIBOPAY_PRODUCTS_CACHE = {
+    # "VIP_1000": "product_hash_123",  # plano_valor_centavos: hash
+}
+
+def get_or_create_tribopay_product(cache_key, plano, valor):
+    """Busca produto no cache ou cria novo na TriboPay se necessário"""
+    
+    # Primeiro verifica cache em memória
+    if cache_key in TRIBOPAY_PRODUCTS_CACHE:
+        product_hash = TRIBOPAY_PRODUCTS_CACHE[cache_key]
+        logger.info(f"📦 Produto encontrado no cache: {cache_key} -> {product_hash}")
+        return product_hash
+    
+    # Se não está no cache, busca no banco de dados
+    if db:
+        try:
+            cached_product = db.get_cached_product(cache_key)
+            if cached_product:
+                product_hash = cached_product['product_hash']
+                # Atualiza cache em memória
+                TRIBOPAY_PRODUCTS_CACHE[cache_key] = product_hash
+                logger.info(f"📦 Produto encontrado no DB cache: {cache_key} -> {product_hash}")
+                return product_hash
+        except Exception as e:
+            logger.warning(f"⚠️ Erro buscando produto no cache DB: {e}")
+    
+    # Se não existe, cria novo produto na TriboPay
+    logger.info(f"📦 Criando novo produto TriboPay: {cache_key}")
+    product_payload = {
+        "title": f"Plano VIP - {plano}",
+        "cover": "https://ana-cardoso.shop/icon-check.png", 
+        "sale_page": "https://ana-cardoso.shop",
+        "payment_type": 1,
+        "product_type": "digital",
+        "delivery_type": 1,
+        "id_category": 1,
+        "amount": int(valor * 100)
+    }
+    
+    tribopay_headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+    
+    try:
+        # Criar produto na TriboPay
+        product_response = requests.post(
+            f"https://api.tribopay.com.br/api/public/v1/products?api_token={TRIBOPAY_API_KEY}",
+            json=product_payload,
+            headers=tribopay_headers,
+            timeout=10
+        )
+        
+        if product_response.status_code != 201:
+            logger.error(f"❌ Erro ao criar produto: {product_response.status_code} - {product_response.text}")
+            return None
+        
+        product_data = product_response.json()
+        product_hash = product_data.get('hash', '')
+        
+        if product_hash:
+            # Salva no cache em memória
+            TRIBOPAY_PRODUCTS_CACHE[cache_key] = product_hash
+            
+            # Salva no cache do banco de dados
+            if db:
+                try:
+                    db.save_cached_product(cache_key, product_hash, plano, valor)
+                    logger.info(f"✅ Produto salvo no DB cache: {cache_key} -> {product_hash}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Erro salvando produto no DB cache: {e}")
+            
+            logger.info(f"✅ Novo produto TriboPay criado: {product_hash}")
+            return product_hash
+        else:
+            logger.error("❌ TriboPay não retornou product_hash")
+            return None
+            
+    except Exception as e:
+        logger.error(f"❌ Erro criando produto TriboPay: {e}")
+        return None
+
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint"""
@@ -55,8 +138,47 @@ def index():
         'status': 'ok',
         'service': 'API Gateway - Bot Telegram Tracking',
         'version': '1.0',
-        'endpoints': ['/health', '/api/users', '/api/tracking/get/<id>', '/api/pix/gerar', '/api/pix/verificar/<user_id>/<plano_id>', '/api/pix/invalidar/<user_id>', '/webhook/tribopay']
+        'endpoints': ['/health', '/api/users', '/api/tracking/get/<id>', '/api/pix/gerar', '/api/pix/verificar/<user_id>/<plano_id>', '/api/pix/invalidar/<user_id>', '/webhook/tribopay', '/migrate/add_plano_id']
     })
+
+@app.route('/migrate/add_plano_id', methods=['POST'])
+def migrate_add_plano_id():
+    """Migração para adicionar coluna plano_id na tabela pix_transactions"""
+    try:
+        if not db:
+            return jsonify({'success': False, 'error': 'Database not available'}), 500
+            
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Verifica se a coluna já existe
+            cursor.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name='pix_transactions' AND column_name='plano_id'
+            """)
+            
+            exists = cursor.fetchone()
+            
+            if not exists:
+                # Adiciona a coluna plano_id
+                cursor.execute("ALTER TABLE pix_transactions ADD COLUMN plano_id VARCHAR(100)")
+                logger.info("✅ Coluna plano_id adicionada com sucesso")
+                return jsonify({
+                    'success': True, 
+                    'message': 'Coluna plano_id adicionada com sucesso',
+                    'migration': 'add_plano_id_column'
+                })
+            else:
+                return jsonify({
+                    'success': True, 
+                    'message': 'Coluna plano_id já existe',
+                    'migration': 'already_exists'
+                })
+                
+    except Exception as e:
+        logger.error(f"❌ Erro na migração: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/users', methods=['POST'])
 def save_user():
@@ -259,7 +381,7 @@ def invalidar_pix_usuario(user_id):
 
 @app.route('/api/pix/gerar', methods=['POST'])
 def gerar_pix():
-    """Gera PIX via TriboPay"""
+    """Gera PIX via TriboPay com cache de produtos"""
     try:
         data = request.get_json()
         user_id = data.get('user_id')
@@ -291,43 +413,24 @@ def gerar_pix():
         logger.info(f"💰 Gerando PIX REAL TriboPay R$ {valor} para usuário {user_id}")
         logger.info(f"📊 Tracking preservado: {tracking_data}")
         
-        # Primeiro, criar produto na TriboPay (OBRIGATÓRIO)
-        logger.info(f"📦 Criando produto na TriboPay")
-        product_payload = {
-            "title": f"Plano VIP - {plano}",
-            "cover": "https://ana-cardoso.shop/icon-check.png",
-            "sale_page": "https://ana-cardoso.shop",
-            "payment_type": 1,
-            "product_type": "digital",
-            "delivery_type": 1,
-            "id_category": 1,
-            "amount": int(valor * 100)
-        }
+        # Sistema de cache de produtos - evita criar produtos desnecessários
+        product_cache_key = f"{plano}_{int(valor * 100)}"
+        product_hash = get_or_create_tribopay_product(product_cache_key, plano, valor)
         
-        # Headers apenas com Content-Type (api_token vai na URL)
+        if not product_hash:
+            logger.error("❌ Falha ao obter product_hash da TriboPay")
+            return jsonify({'success': False, 'error': 'Erro na criação do produto'}), 500
+        
+        logger.info(f"✅ Produto TriboPay: {product_hash} (cache: {product_cache_key})")
+        
+        # Headers para requisições TriboPay
         tribopay_headers = {
             "Content-Type": "application/json",
             "Accept": "application/json"
         }
         
         try:
-            # Criar produto primeiro
-            product_response = requests.post(
-                f"https://api.tribopay.com.br/api/public/v1/products?api_token={TRIBOPAY_API_KEY}",
-                json=product_payload,
-                headers=tribopay_headers,
-                timeout=10
-            )
-            
-            if product_response.status_code != 201:
-                logger.error(f"❌ Erro ao criar produto: {product_response.status_code} - {product_response.text}")
-                raise Exception(f"Erro ao criar produto: {product_response.text}")
-            
-            product_data = product_response.json()
-            product_hash = product_data.get('hash', '')
-            logger.info(f"✅ Produto criado: {product_hash}")
-            
-            # Agora criar a transação PIX com o formato CORRETO
+            # Criar a transação PIX usando produto do cache
             valor_centavos = int(valor * 100)
             
             # Adicionar parâmetros de tracking UTM ao payload
@@ -425,21 +528,26 @@ def gerar_pix():
             qr_code = None
             tribopay_data = {"fallback": True, "error": str(tribopay_error)}
         
-        # Salva transação no PostgreSQL com plano_id para cache
+        # Salva transação no PostgreSQL com fallback robusto para plano_id
         if db:
-            db.save_pix_transaction(
-                transaction_id=transaction_id,
-                telegram_id=int(user_id),
-                amount=valor,
-                tracking_data=tracking_data,
-                plano_id=plano_id  # Adiciona plano_id para sistema de cache
-            )
-            db.update_pix_transaction(
-                transaction_id=transaction_id,
-                status='pending',
-                pix_code=pix_code,
-                qr_code=qr_code  # Salva QR code também
-            )
+            try:
+                db.save_pix_transaction(
+                    transaction_id=transaction_id,
+                    telegram_id=int(user_id),
+                    amount=valor,
+                    tracking_data=tracking_data,
+                    plano_id=plano_id  # Sistema inteligente: funciona com/sem coluna
+                )
+                db.update_pix_transaction(
+                    transaction_id=transaction_id,
+                    status='pending',
+                    pix_code=pix_code,
+                    qr_code=qr_code
+                )
+                logger.info(f"✅ Transação salva no PostgreSQL: {transaction_id}")
+            except Exception as db_error:
+                logger.error(f"❌ Erro salvando no database: {db_error}")
+                # Continua mesmo se falhar o save - PIX foi gerado
         else:
             return jsonify({'success': False, 'error': 'Database not available'}), 500
         

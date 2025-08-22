@@ -109,6 +109,18 @@ class DatabaseManager:
                 xtracky_response TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+            """,
+            
+            # Tabela de cache de produtos TriboPay
+            """
+            CREATE TABLE IF NOT EXISTS tribopay_products_cache (
+                id SERIAL PRIMARY KEY,
+                cache_key VARCHAR(100) UNIQUE NOT NULL,
+                product_hash VARCHAR(255) NOT NULL,
+                plano VARCHAR(50),
+                valor DECIMAL(10,2),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
             """
         ]
         
@@ -195,19 +207,51 @@ class DatabaseManager:
         """Salvar transação PIX"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO pix_transactions 
-                (transaction_id, telegram_id, amount, plano_id, click_id, utm_source, utm_medium, utm_campaign, utm_term, utm_content)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (
-                transaction_id, telegram_id, amount, plano_id,
-                tracking_data.get('click_id'),
-                tracking_data.get('utm_source'),
-                tracking_data.get('utm_medium'),
-                tracking_data.get('utm_campaign'),
-                tracking_data.get('utm_term'),
-                tracking_data.get('utm_content')
-            ))
+            
+            # Verifica se a coluna plano_id existe
+            try:
+                cursor.execute("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name='pix_transactions' AND column_name='plano_id'
+                """)
+                plano_id_exists = cursor.fetchone()
+                
+                if plano_id_exists:
+                    # Se a coluna existe, insere com plano_id
+                    cursor.execute("""
+                        INSERT INTO pix_transactions 
+                        (transaction_id, telegram_id, amount, plano_id, click_id, utm_source, utm_medium, utm_campaign, utm_term, utm_content)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        transaction_id, telegram_id, amount, plano_id,
+                        tracking_data.get('click_id'),
+                        tracking_data.get('utm_source'),
+                        tracking_data.get('utm_medium'),
+                        tracking_data.get('utm_campaign'),
+                        tracking_data.get('utm_term'),
+                        tracking_data.get('utm_content')
+                    ))
+                else:
+                    # Fallback: insere sem plano_id
+                    logger.warning("⚠️ Coluna plano_id não existe - inserindo sem plano_id")
+                    cursor.execute("""
+                        INSERT INTO pix_transactions 
+                        (transaction_id, telegram_id, amount, click_id, utm_source, utm_medium, utm_campaign, utm_term, utm_content)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        transaction_id, telegram_id, amount,
+                        tracking_data.get('click_id'),
+                        tracking_data.get('utm_source'),
+                        tracking_data.get('utm_medium'),
+                        tracking_data.get('utm_campaign'),
+                        tracking_data.get('utm_term'),
+                        tracking_data.get('utm_content')
+                    ))
+                    
+            except Exception as e:
+                logger.error(f"❌ Erro em save_pix_transaction: {e}")
+                raise
 
     def update_pix_transaction(self, transaction_id, status=None, pix_code=None, qr_code=None):
         """Atualizar transação PIX"""
@@ -244,16 +288,45 @@ class DatabaseManager:
         """Buscar PIX ativo para usuário e plano específico (válido por 1h)"""
         with self.get_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            cursor.execute("""
-                SELECT * FROM pix_transactions 
-                WHERE telegram_id = %s 
-                AND plano_id = %s 
-                AND status = 'pending' 
-                AND created_at > NOW() - INTERVAL '1 hour'
-                ORDER BY created_at DESC 
-                LIMIT 1
-            """, (telegram_id, plano_id))
-            return cursor.fetchone()
+            
+            # Primeiro verifica se a coluna plano_id existe
+            try:
+                cursor.execute("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name='pix_transactions' AND column_name='plano_id'
+                """)
+                plano_id_exists = cursor.fetchone()
+                
+                if plano_id_exists:
+                    # Se a coluna existe, usa query com plano_id
+                    cursor.execute("""
+                        SELECT * FROM pix_transactions 
+                        WHERE telegram_id = %s 
+                        AND plano_id = %s 
+                        AND status = 'pending' 
+                        AND created_at > NOW() - INTERVAL '1 hour'
+                        ORDER BY created_at DESC 
+                        LIMIT 1
+                    """, (telegram_id, plano_id))
+                else:
+                    # Fallback: busca apenas por telegram_id (sem filtro de plano)
+                    logger.warning("⚠️ Coluna plano_id não existe - usando fallback")
+                    cursor.execute("""
+                        SELECT * FROM pix_transactions 
+                        WHERE telegram_id = %s 
+                        AND status = 'pending' 
+                        AND created_at > NOW() - INTERVAL '1 hour'
+                        ORDER BY created_at DESC 
+                        LIMIT 1
+                    """, (telegram_id,))
+                
+                return cursor.fetchone()
+                
+            except Exception as e:
+                logger.error(f"❌ Erro em get_active_pix: {e}")
+                # Fallback final: retorna None
+                return None
     
     def invalidate_user_pix(self, telegram_id):
         """Invalida todos os PIX pendentes do usuário"""
@@ -275,6 +348,27 @@ class DatabaseManager:
                 (transaction_id, click_id, utm_source, utm_campaign, conversion_value, status, xtracky_response)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
             """, (transaction_id, click_id, utm_source, utm_campaign, conversion_value, status, xtracky_response))
+    
+    def save_cached_product(self, cache_key, product_hash, plano, valor):
+        """Salva produto no cache TriboPay"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO tribopay_products_cache (cache_key, product_hash, plano, valor)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (cache_key) 
+                DO UPDATE SET product_hash = EXCLUDED.product_hash
+            """, (cache_key, product_hash, plano, valor))
+    
+    def get_cached_product(self, cache_key):
+        """Busca produto no cache TriboPay"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute("""
+                SELECT * FROM tribopay_products_cache 
+                WHERE cache_key = %s
+            """, (cache_key,))
+            return cursor.fetchone()
 
 # Instância global do database
 db = None
