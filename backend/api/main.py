@@ -344,7 +344,7 @@ def gerar_pix():
         else:
             return jsonify({'success': False, 'error': 'Database not available'}), 500
         
-        logger.info(f"💰 Gerando PIX REAL TriboPay R$ {valor} para usuário {user_id}")
+        logger.info(f"💰 Gerando PIX R$ {valor} para usuário {user_id} (Deploy: c2025d8)")
         logger.info(f"📊 Tracking preservado: {tracking_data}")
         
         # Obtém offer_hash fixo baseado no plano_id
