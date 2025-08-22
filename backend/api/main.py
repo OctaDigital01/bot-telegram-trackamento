@@ -974,6 +974,16 @@ def clear_database():
         cleared_tables = []
         errors = []
         
+        # Desabilita temporariamente foreign key checks se possível
+        try:
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                # PostgreSQL: não precisa desabilitar foreign keys como MySQL
+                # TRUNCATE CASCADE vai lidar com isso
+                logger.info("🔧 Iniciando limpeza com TRUNCATE CASCADE")
+        except Exception as e:
+            logger.warning(f"⚠️ Aviso ao preparar limpeza: {e}")
+        
         # Executa TRUNCATE em cada tabela
         for table in tables_to_clear:
             try:
@@ -988,11 +998,31 @@ def clear_database():
                 exists = db.execute_query(check_query, [table])
                 
                 if exists and exists[0]['exists']:
+                    # Log antes da limpeza
+                    count_before = db.execute_query(f"SELECT COUNT(*) as total FROM {table}")
+                    count_before_num = count_before[0]['total'] if count_before else 0
+                    logger.info(f"🔍 Tabela '{table}': {count_before_num} registros antes da limpeza")
+                    
                     # TRUNCATE CASCADE para lidar com foreign keys
                     truncate_query = f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE;"
-                    db.execute_query(truncate_query)
-                    cleared_tables.append(table)
-                    logger.info(f"✅ Tabela '{table}' limpa com sucesso")
+                    
+                    # Execute with direct connection instead of execute_query
+                    with db.get_connection() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute(truncate_query)
+                        conn.commit()
+                    
+                    # Verifica se limpeza funcionou
+                    count_after = db.execute_query(f"SELECT COUNT(*) as total FROM {table}")
+                    count_after_num = count_after[0]['total'] if count_after else 0
+                    
+                    if count_after_num == 0:
+                        cleared_tables.append(table)
+                        logger.info(f"✅ Tabela '{table}' limpa com sucesso: {count_before_num} -> {count_after_num}")
+                    else:
+                        error_msg = f"Falha na limpeza da tabela '{table}': ainda há {count_after_num} registros"
+                        errors.append(error_msg)
+                        logger.error(f"❌ {error_msg}")
                 else:
                     logger.warning(f"⚠️ Tabela '{table}' não existe - ignorando")
                     
