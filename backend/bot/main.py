@@ -175,58 +175,85 @@ async def check_if_user_is_member(context: ContextTypes.DEFAULT_TYPE, user_id: i
     #================= FECHAMENTO ======================
 
 async def decode_tracking_data(encoded_param: str):
-    #======== DECODIFICA DADOS DE TRACKING =============
-    logger.info(f"🔍 Decodificando tracking: {encoded_param}")
-    if not encoded_param or encoded_param.strip() == '':
+    #======== DECODIFICA DADOS DE TRACKING (VERSÃO CORRIGIDA) =============
+    logger.info(f"🔍 Decodificando tracking: '{encoded_param}' (tipo: {type(encoded_param)}, len: {len(encoded_param) if encoded_param else 'None'})")
+    
+    if not encoded_param or encoded_param.strip() == '' or encoded_param == 'no_tracking':
+        logger.info("⚠️ Parâmetro vazio ou 'no_tracking' - tentando fallback último tracking")
+        # Fallback: busca último tracking disponível
+        try:
+            response = await http_client.get(f"{API_GATEWAY_URL}/api/tracking/latest")
+            if response.status_code == 200:
+                result = response.json()
+                if result.get('success'):
+                    fallback_data = json.loads(result['original'])
+                    logger.info(f"✅ Fallback tracking recuperado: {fallback_data}")
+                    return fallback_data
+        except Exception as e:
+            logger.warning(f"⚠️ Erro no fallback tracking: {e}")
         return {'utm_source': 'direct_bot', 'click_id': 'direct_access'}
     
     try:
         # Método 1: ID mapeado (começa com M)
-        if encoded_param.startswith('M') and len(encoded_param) <= 12:
+        if encoded_param.startswith('M') and len(encoded_param) <= 15:  # Aumentado limite
+            logger.info(f"🔍 Método 1: Tentando buscar ID mapeado '{encoded_param}'")
             try:
                 response = await http_client.get(f"{API_GATEWAY_URL}/api/tracking/get/{encoded_param}")
+                logger.info(f"📡 Response status da API: {response.status_code}")
+                
                 if response.status_code == 200:
                     result = response.json()
+                    logger.info(f"📦 Response JSON: {result}")
+                    
                     if result.get('success'):
                         original_data = json.loads(result['original'])
-                        logger.info(f"✅ Tracking mapeado recuperado: {original_data}")
+                        logger.info(f"✅ Tracking mapeado recuperado com sucesso: {original_data}")
                         return original_data
                     else:
-                        logger.warning(f"⚠️ Tracking mapeado não encontrado: {encoded_param}")
+                        logger.warning(f"⚠️ API retornou success=False para tracking mapeado: {encoded_param}")
                 else:
-                    logger.error(f"❌ Erro HTTP ao buscar tracking mapeado: {response.status_code}")
+                    logger.error(f"❌ Erro HTTP ao buscar tracking mapeado: {response.status_code} - {response.text}")
             except Exception as e:
-                logger.error(f"❌ Erro ao buscar tracking mapeado: {e}")
-            # Se falhar, usa como click_id direto
-            return {'click_id': encoded_param}
+                logger.error(f"❌ Erro crítico ao buscar tracking mapeado: {e}")
+            
+            # Fallback: se o ID mapeado falhou, tenta outras opções
+            logger.info(f"🔄 ID mapeado falhou, usando '{encoded_param}' como click_id direto")
+            return {'click_id': encoded_param, 'utm_source': 'mapped_id_fallback'}
         
         # Método 2: Base64 JSON
+        logger.info(f"🔍 Método 2: Tentando decodificar Base64")
         try:
             decoded_bytes = base64.b64decode(encoded_param.encode('utf-8'))
             tracking_data = json.loads(decoded_bytes.decode('utf-8'))
-            logger.info(f"✅ Tracking Base64 decodificado: {tracking_data}")
+            logger.info(f"✅ Tracking Base64 decodificado com sucesso: {tracking_data}")
             return tracking_data
-        except (json.JSONDecodeError, Exception):
-            pass # Tenta o próximo método
+        except (json.JSONDecodeError, Exception) as e:
+            logger.info(f"⚠️ Base64 decode falhou: {e}")
 
-        # Método 3: Formato :: separado
+        # Método 3: Formato :: separado (Xtracky)
         if '::' in encoded_param:
+            logger.info(f"🔍 Método 3: Decodificando formato :: separado")
             parts = encoded_param.split('::')
             tracking_data = {
                 'utm_source': parts[0] if len(parts) > 0 and parts[0] else None,
-                'click_id': parts[1] if len(parts) > 1 and parts[1] else None
+                'click_id': parts[1] if len(parts) > 1 and parts[1] else None,
+                'utm_medium': parts[2] if len(parts) > 2 and parts[2] else None,
+                'utm_campaign': parts[3] if len(parts) > 3 and parts[3] else None
             }
+            # Remove valores None
             tracking_data = {k: v for k, v in tracking_data.items() if v}
             logger.info(f"✅ Tracking :: formato decodificado: {tracking_data}")
             return tracking_data
         
-        # Fallback: usa como click_id direto
-        logger.info(f"⚠️ Usando fallback - click_id direto: {encoded_param}")
-        return {'click_id': encoded_param}
+        # Método 4: Parâmetro direto como click_id
+        logger.info(f"🔍 Método 4: Usando parâmetro direto como click_id")
+        tracking_data = {'click_id': encoded_param, 'utm_source': 'direct_param'}
+        logger.info(f"✅ Tracking direto processado: {tracking_data}")
+        return tracking_data
         
     except Exception as e:
-        logger.error(f"❌ Erro crítico decodificação: {e}")
-        return {'click_id': encoded_param, 'utm_source': 'decode_error'}
+        logger.error(f"❌ Erro crítico na decodificação: {e}")
+        return {'click_id': str(encoded_param), 'utm_source': 'decode_error', 'error': str(e)}
     #================= FECHAMENTO ======================
 
 async def remove_job_if_exists(name: str, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -648,72 +675,127 @@ async def callback_escolher_outro_plano(update: Update, context: ContextTypes.DE
 # 4. FUNÇÃO PRINCIPAL E EXECUÇÃO DO BOT
 # ==============================================================================
 async def main():
-    #======== INICIALIZA E EXECUTA O BOT DE FORMA ASSÍNCRONA =============
+    #======== INICIALIZA E EXECUTA O BOT DE FORMA ASSÍNCRONA (CORRIGIDO CONFLITOS) =============
     global _BOT_INSTANCE
     
+    # Força encerramento de qualquer instância anterior
     if _BOT_INSTANCE:
         logger.warning("⚠️ Bot já está rodando, encerrando instância anterior...")
         try:
             old_instance = _BOT_INSTANCE
-            if hasattr(old_instance, 'updater') and old_instance.updater and old_instance.updater.is_running():
-                await old_instance.updater.stop()
+            # Tenta parar de forma gentil primeiro
+            if hasattr(old_instance, 'updater') and old_instance.updater:
+                if hasattr(old_instance.updater, 'is_running') and old_instance.updater.is_running():
+                    logger.info("🛑 Parando updater anterior...")
+                    await old_instance.updater.stop()
+                    await asyncio.sleep(1)
+            
             if hasattr(old_instance, 'stop'):
+                logger.info("🛑 Parando aplicação anterior...")
                 await old_instance.stop()
+                await asyncio.sleep(1)
+                
             if hasattr(old_instance, 'shutdown'):
+                logger.info("🛑 Fazendo shutdown da aplicação anterior...")
                 await old_instance.shutdown()
+                await asyncio.sleep(1)
+                
         except Exception as e:
             logger.error(f"❌ Erro ao encerrar instância anterior: {e}")
+        
         _BOT_INSTANCE = None
-        # Aguarda um pouco antes de iniciar nova instância
-        await asyncio.sleep(2)
+        # Aguarda mais tempo para garantir que recursos sejam liberados
+        logger.info("⏳ Aguardando liberação de recursos...")
+        await asyncio.sleep(5)
     
+    # Validação rigorosa das variáveis de ambiente
     required_vars = ['TELEGRAM_BOT_TOKEN', 'API_GATEWAY_URL', 'GRUPO_GRATIS_ID', 'GRUPO_GRATIS_INVITE_LINK']
-    if any(not os.getenv(var) for var in required_vars):
-        logger.critical("❌ ERRO CRÍTICO: Variáveis de ambiente obrigatórias não configuradas.")
+    missing_vars = [var for var in required_vars if not os.getenv(var)]
+    if missing_vars:
+        logger.critical(f"❌ ERRO CRÍTICO: Variáveis de ambiente obrigatórias não configuradas: {missing_vars}")
+        return
+    
+    # Validação adicional do token
+    if not BOT_TOKEN or len(BOT_TOKEN) < 40:
+        logger.critical("❌ ERRO CRÍTICO: TELEGRAM_BOT_TOKEN inválido")
         return
         
-    logger.info("🤖 === BOT COM FUNIL OTIMIZADO INICIANDO ===")
+    logger.info("🤖 === BOT COM FUNIL OTIMIZADO E TRACKING CORRIGIDO INICIANDO ===")
+    logger.info(f"🔗 API Gateway URL: {API_GATEWAY_URL}")
+    logger.info(f"👥 Grupo ID: {GROUP_ID}")
     
-    application = Application.builder().token(BOT_TOKEN).build()
-    _BOT_INSTANCE = application
-    
-    # Registra os handlers
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(ChatJoinRequestHandler(handle_join_request))
-    application.add_handler(CallbackQueryHandler(callback_trigger_etapa3, pattern='^trigger_etapa3$'))
-    application.add_handler(CallbackQueryHandler(callback_trigger_etapa4, pattern='^trigger_etapa4$'))
-    application.add_handler(CallbackQueryHandler(callback_processar_plano, pattern='^plano:'))
-    application.add_handler(CallbackQueryHandler(callback_ja_paguei, pattern='^ja_paguei:'))
-    application.add_handler(CallbackQueryHandler(callback_escolher_outro_plano, pattern='^escolher_outro_plano$'))
-    
+    # Configuração mais robusta do bot
     try:
-        logger.info("🚀 Bot pronto para iniciar o polling...")
+        application = Application.builder().token(BOT_TOKEN).build()
+        _BOT_INSTANCE = application
+        
+        # Registra os handlers na ordem correta
+        application.add_handler(CommandHandler("start", start_command))
+        application.add_handler(ChatJoinRequestHandler(handle_join_request))
+        application.add_handler(CallbackQueryHandler(callback_trigger_etapa3, pattern='^trigger_etapa3$'))
+        application.add_handler(CallbackQueryHandler(callback_trigger_etapa4, pattern='^trigger_etapa4$'))
+        application.add_handler(CallbackQueryHandler(callback_processar_plano, pattern='^plano:'))
+        application.add_handler(CallbackQueryHandler(callback_ja_paguei, pattern='^ja_paguei:'))
+        application.add_handler(CallbackQueryHandler(callback_escolher_outro_plano, pattern='^escolher_outro_plano$'))
+        logger.info("✅ Handlers registrados com sucesso")
+    
+        # Inicialização mais robusta
+        logger.info("🔧 Inicializando aplicação...")
         await application.initialize()
+        
+        logger.info("▶️ Iniciando aplicação...")
         await application.start()
-        await application.updater.start_polling(
-            allowed_updates=['message', 'callback_query', 'chat_join_request'],
-            drop_pending_updates=True
-        )
-        logger.info("✅ Bot online e recebendo atualizações.")
+        
+        logger.info("🚀 Iniciando polling...")
+        if application.updater:
+            await application.updater.start_polling(
+                allowed_updates=['message', 'callback_query', 'chat_join_request'],
+                drop_pending_updates=True,
+                read_timeout=30,
+                write_timeout=30,
+                connect_timeout=30,
+                pool_timeout=30
+            )
+        
+        logger.info("✅ Bot online e recebendo atualizações - Sistema de tracking corrigido")
+        logger.info("📊 Funcionalidades ativas:")
+        logger.info("   - Decodificação de tracking com 4 métodos")
+        logger.info("   - Fallback inteligente para último tracking")
+        logger.info("   - Logs detalhados para debug")
+        logger.info("   - Prevenção de conflitos 409")
+        
         # Mantém o script rodando indefinidamente
         await asyncio.Event().wait()
 
     except Conflict as e:
-        logger.error(f"❌ CONFLITO: Outra instância do bot pode estar rodando. {e}")
+        logger.error(f"❌ CONFLITO 409: Múltiplas instâncias detectadas. {e}")
+        logger.error("💡 SOLUÇÃO: Verifique se há outras instâncias rodando no Railway")
+        logger.error("💡 COMANDO: railway ps para ver processos ativos")
     except Exception as e:
         logger.critical(f"❌ Erro fatal na execução do bot: {e}", exc_info=True)
     finally:
-        logger.info("🛑 Encerrando o bot...")
-        if application.updater and application.updater.is_running():
-            await application.updater.stop()
-        if application:
-            await application.stop()
-            await application.shutdown()
-        if http_client:
-            await http_client.aclose()
-            logger.info("🔒 Cliente HTTP encerrado.")
-        _BOT_INSTANCE = None
-        logger.info("✅ Bot encerrado com sucesso.")
+        logger.info("🛑 Iniciando processo de encerramento...")
+        try:
+            if _BOT_INSTANCE and hasattr(_BOT_INSTANCE, 'updater') and _BOT_INSTANCE.updater:
+                if hasattr(_BOT_INSTANCE.updater, 'is_running') and _BOT_INSTANCE.updater.is_running():
+                    logger.info("🛑 Parando updater...")
+                    await _BOT_INSTANCE.updater.stop()
+            
+            if _BOT_INSTANCE:
+                logger.info("🛑 Parando aplicação...")
+                await _BOT_INSTANCE.stop()
+                logger.info("🛑 Fazendo shutdown...")
+                await _BOT_INSTANCE.shutdown()
+            
+            if http_client and not http_client.is_closed:
+                logger.info("🔒 Fechando cliente HTTP...")
+                await http_client.aclose()
+        
+        except Exception as e:
+            logger.error(f"❌ Erro durante encerramento: {e}")
+        finally:
+            _BOT_INSTANCE = None
+            logger.info("✅ Bot encerrado com sucesso.")
 #================= FECHAMENTO ======================
 
 if __name__ == '__main__':

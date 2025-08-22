@@ -136,19 +136,28 @@ def gerar_pix():
         if not db:
             return jsonify({'success': False, 'error': 'Serviço indisponível (sem conexão com o banco de dados)'}), 503
 
-        # 2. Busca de dados de tracking
+        # 2. Busca de dados de tracking com logs detalhados
         tracking_data = {}
         user_data = db.get_user(int(user_id))
         if user_data:
             tracking_data = user_data.get('tracking_data', {})
             logger.info(f"🎯 Tracking encontrado para usuário {user_id}: {tracking_data}")
             
-            # Log detalhado dos dados de tracking para debug
+            # Log detalhado dos dados de tracking para debug PIX
             click_id = tracking_data.get('click_id')
             utm_source = tracking_data.get('utm_source')
-            logger.info(f"📊 Dados tracking PIX - click_id: {click_id}, utm_source: {utm_source}")
+            utm_medium = tracking_data.get('utm_medium')
+            utm_campaign = tracking_data.get('utm_campaign')
+            
+            logger.info(f"📊 Dados tracking detalhados PIX:")
+            logger.info(f"   - click_id: {click_id}")
+            logger.info(f"   - utm_source: {utm_source}")
+            logger.info(f"   - utm_medium: {utm_medium}")
+            logger.info(f"   - utm_campaign: {utm_campaign}")
+            logger.info(f"   - Total campos tracking: {len(tracking_data)}")
         else:
             logger.warning(f"⚠️ Usuário {user_id} não encontrado no banco. Tracking não será enviado.")
+            logger.warning(f"💡 Dica: Usuário pode não ter passado pelo /start ou dados não foram salvos corretamente")
 
         # 3. Preparação do Payload para a TriboPay, EXATAMENTE conforme a documentação oficial
         offer_data = get_offer_data_by_plano_id(plano_id)
