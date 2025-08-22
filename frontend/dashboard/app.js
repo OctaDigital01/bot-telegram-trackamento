@@ -13,7 +13,7 @@ class Dashboard {
     }
     
     async initializeApp() {
-        console.log('🚀 Inicializando Dashboard...');
+        console.log('🚀 Inicializando Dashboard v2.0...');
         
         // Configurar dates default (últimos 7 dias)
         this.setDefaultDates();
