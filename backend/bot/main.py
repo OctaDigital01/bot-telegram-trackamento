@@ -125,7 +125,7 @@ MEDIA_APRESENTACAO = os.getenv('MEDIA_APRESENTACAO')
 MEDIA_VIDEO_QUENTE = os.getenv('MEDIA_VIDEO_QUENTE')
 MEDIA_PREVIA_SITE = os.getenv('MEDIA_PREVIA_SITE')
 MEDIA_PROVOCATIVA = os.getenv('MEDIA_PROVOCATIVA')
-MEDIA_NOVA_GALERIA = os.getenv('MEDIA_NOVA_GALERIA')
+MEDIA_VIDEO_SEDUCAO = os.getenv('MEDIA_VIDEO_SEDUCAO')
 # ====================================================
 
 # ======== CONFIGURAÇÃO DOS PLANOS VIP =============
@@ -629,7 +629,7 @@ async def job_etapa3_galeria(context: ContextTypes.DEFAULT_TYPE, chat_id_manual=
     
     media_group = [
         InputMediaVideo(media=MEDIA_VIDEO_QUENTE),
-        InputMediaPhoto(media=MEDIA_NOVA_GALERIA),
+        InputMediaPhoto(media=MEDIA_VIDEO_SEDUCAO),
         InputMediaPhoto(media=MEDIA_PREVIA_SITE),
         InputMediaPhoto(media=MEDIA_PROVOCATIVA)
     ]
