@@ -43,10 +43,10 @@ def get_tribopay_offer_mapping():
     return {
         "plano_desc_etapa5": os.getenv('TRIBOPAY_OFFER_DESCONTO', 'gruqs'),
         "plano_desc_20_off": os.getenv('TRIBOPAY_OFFER_DESCONTO', 'gruqs'),
-        "plano_1mes": os.getenv('TRIBOPAY_OFFER_VIP_BASICO', 'gruqs'),
-        "plano_3meses": os.getenv('TRIBOPAY_OFFER_VIP_PREMIUM', 'gruqs'),
-        "plano_1ano": os.getenv('TRIBOPAY_OFFER_VIP_COMPLETO', 'gruqs'),
-        "default": os.getenv('TRIBOPAY_OFFER_DEFAULT', 'gruqs')
+        "plano_1mes": os.getenv('TRIBOPAY_OFFER_VIP_BASICO', 'gikxo'),
+        "plano_3meses": os.getenv('TRIBOPAY_OFFER_VIP_PREMIUM', 'xuz06'),
+        "plano_1ano": os.getenv('TRIBOPAY_OFFER_VIP_COMPLETO', 'xlyfd'),
+        "default": os.getenv('TRIBOPAY_OFFER_DEFAULT', 'gikxo')
     }
 
 def get_offer_hash_by_plano_id(plano_id):
