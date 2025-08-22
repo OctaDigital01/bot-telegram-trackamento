@@ -642,8 +642,42 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
             [InlineKeyboardButton("🔄 ESCOLHER OUTRO PLANO", callback_data="escolher_outro_plano")]
         ]
         
-        await context.bot.send_photo(chat_id=chat_id, photo=qr_code_url, caption=caption, 
-                                   reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+        # CORREÇÃO: Envio de PIX reutilizado com tratamento de erro
+        try:
+            pix_message = await context.bot.send_photo(
+                chat_id=chat_id, 
+                photo=qr_code_url, 
+                caption=caption, 
+                reply_markup=InlineKeyboardMarkup(keyboard), 
+                parse_mode='HTML'
+            )
+            logger.info(f"✅ Mensagem PIX reutilizado enviada com sucesso (ID: {pix_message.message_id}) para usuário {user_id}")
+            
+        except Exception as e:
+            logger.error(f"❌ ERRO ao enviar mensagem PIX reutilizado para {user_id}: {e}")
+            # Fallback para mensagem de texto
+            try:
+                texto_fallback = (
+                    f"💎 <b>Seu PIX está aqui, meu amor!</b>\n\n"
+                    f"💸 <b>PIX Copia e Cola:</b>\n"
+                    f"<code>{escape(pix_copia_cola)}</code>\n"
+                    f"<i>(Clique para copiar)</i>\n\n"
+                    f"🎯 <b>Plano:</b> {escape(plano_selecionado['nome'])}\n"
+                    f"💰 <b>Valor: R$ {plano_selecionado['valor']:.2f}</b>\n\n"
+                    f"🔗 <b>QR Code:</b> {qr_code_url}"
+                )
+                
+                fallback_message = await context.bot.send_message(
+                    chat_id=chat_id, 
+                    text=texto_fallback, 
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode='HTML'
+                )
+                logger.info(f"✅ Mensagem PIX reutilizado fallback enviada (ID: {fallback_message.message_id}) para usuário {user_id}")
+                
+            except Exception as e2:
+                logger.error(f"❌ FALHA TOTAL ao enviar PIX reutilizado para {user_id}: {e2}")
+                return  # Para a execução se não conseguir enviar de forma alguma
         
         # Para PIX reutilizado, agenda timeout baseado no tempo restante
         tempo_restante_str = pix_existente.get('tempo_restante', '60')
@@ -689,21 +723,40 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
         response = await http_client.post(f"{API_GATEWAY_URL}/api/pix/gerar", json=pix_data)
         logger.info(f"📡 Resposta API PIX: {response.status_code}")
         
+        # CORREÇÃO CRÍTICA 1: Validação mais robusta da resposta
         if response.status_code != 200:
             logger.error(f"❌ Erro HTTP gerando PIX: {response.status_code} - {response.text}")
             raise Exception(f"API PIX falhou: {response.status_code} - {response.text}")
         
         result = response.json()
-        logger.info(f"✅ PIX gerado com sucesso: {result.get('transaction_id', 'N/A')}")
+        logger.info(f"📋 Resposta completa API PIX: {result}")
         
+        # CORREÇÃO CRÍTICA 2: Validação do success antes de processar dados
         if not result.get('success'):
             logger.error(f"❌ API PIX retornou erro: {result}")
             raise Exception(f"API PIX retornou erro: {result.get('error', 'Unknown error')}")
         
-        await msg_loading.delete()
+        # CORREÇÃO CRÍTICA 3: Validação de dados obrigatórios antes de deletar loading
+        transaction_id = result.get('transaction_id')
+        pix_copia_cola = result.get('pix_copia_cola')
+        qr_code_base = result.get('qr_code')
         
-        pix_copia_cola = result['pix_copia_cola']
-        qr_code_url = result.get('qr_code') or f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={pix_copia_cola}"
+        if not all([transaction_id, pix_copia_cola]):
+            logger.error(f"❌ Dados PIX incompletos na resposta: transaction_id={transaction_id}, pix_copia_cola={bool(pix_copia_cola)}")
+            raise Exception("Resposta da API PIX incompleta - faltam dados essenciais")
+        
+        logger.info(f"✅ PIX gerado com sucesso: {transaction_id}")
+        
+        # CORREÇÃO CRÍTICA 4: Só deleta loading DEPOIS de validar todos os dados
+        try:
+            await msg_loading.delete()
+            logger.info(f"🗑️ Mensagem de loading deletada com sucesso")
+        except Exception as e:
+            logger.warning(f"⚠️ Não foi possível deletar mensagem de loading: {e}")
+            # Continua o processo mesmo se não conseguir deletar
+        
+        # Gera QR code URL (usa API externa se não vier da TriboPay)
+        qr_code_url = qr_code_base or f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={pix_copia_cola}"
         
         caption = (
             f"💎 <b>Seu PIX está aqui, meu amor!</b>\n\n"
@@ -721,8 +774,42 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
             [InlineKeyboardButton("🔄 ESCOLHER OUTRO PLANO", callback_data="escolher_outro_plano")]
         ]
         
-        await context.bot.send_photo(chat_id=chat_id, photo=qr_code_url, caption=caption, 
-                                   reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+        # CORREÇÃO CRÍTICA 5: Envio da mensagem PIX com tratamento de erro separado
+        try:
+            pix_message = await context.bot.send_photo(
+                chat_id=chat_id, 
+                photo=qr_code_url, 
+                caption=caption, 
+                reply_markup=InlineKeyboardMarkup(keyboard), 
+                parse_mode='HTML'
+            )
+            logger.info(f"✅ Mensagem PIX enviada com sucesso (ID: {pix_message.message_id}) para usuário {user_id}")
+            
+        except Exception as e:
+            logger.error(f"❌ ERRO CRÍTICO ao enviar mensagem PIX para {user_id}: {e}")
+            # Tenta enviar como mensagem de texto se a foto falhar
+            try:
+                texto_fallback = (
+                    f"💎 <b>Seu PIX está aqui, meu amor!</b>\n\n"
+                    f"💸 <b>PIX Copia e Cola:</b>\n"
+                    f"<code>{escape(pix_copia_cola)}</code>\n"
+                    f"<i>(Clique para copiar)</i>\n\n"
+                    f"🎯 <b>Plano:</b> {escape(plano_selecionado['nome'])}\n"
+                    f"💰 <b>Valor: R$ {plano_selecionado['valor']:.2f}</b>\n\n"
+                    f"🔗 <b>QR Code:</b> {qr_code_url}"
+                )
+                
+                fallback_message = await context.bot.send_message(
+                    chat_id=chat_id, 
+                    text=texto_fallback, 
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode='HTML'
+                )
+                logger.info(f"✅ Mensagem PIX fallback enviada (ID: {fallback_message.message_id}) para usuário {user_id}")
+                
+            except Exception as e2:
+                logger.error(f"❌ FALHA TOTAL ao enviar mensagem PIX para {user_id}: {e2}")
+                raise Exception(f"Não foi possível enviar mensagem PIX: {e}")
         
         # Agenda job de timeout PIX para 60 minutos (3600 segundos)
         # Remove qualquer job anterior de timeout PIX deste usuário
@@ -742,7 +829,31 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
         
     except Exception as e:
         logger.error(f"❌ Erro CRÍTICO ao processar pagamento para {user_id}: {e}")
-        await msg_loading.edit_text("❌ Um erro inesperado ocorreu. Por favor, tente novamente mais tarde ou escolha outro plano.")
+        
+        # CORREÇÃO CRÍTICA 6: Tratamento de erro mais robusto
+        try:
+            # Tenta editar a mensagem de loading com erro
+            await msg_loading.edit_text(
+                "❌ <b>Ops! Ocorreu um erro ao gerar seu PIX.</b>\n\n"
+                "🔄 <i>Por favor, tente novamente em alguns segundos ou escolha outro plano.</i>",
+                parse_mode='HTML'
+            )
+            logger.info(f"🔧 Mensagem de erro editada com sucesso para usuário {user_id}")
+            
+        except Exception as e2:
+            logger.error(f"❌ Não foi possível editar mensagem de loading com erro: {e2}")
+            
+            # Último recurso: envia nova mensagem de erro
+            try:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ <b>Erro ao gerar PIX</b>\n\n🔄 Tente novamente em alguns segundos.",
+                    parse_mode='HTML'
+                )
+                logger.info(f"🆘 Mensagem de erro enviada como último recurso para usuário {user_id}")
+                
+            except Exception as e3:
+                logger.error(f"❌ FALHA TOTAL na comunicação com usuário {user_id}: {e3}")
     #================= FECHAMENTO ======================
 
 async def callback_ja_paguei(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -837,6 +948,7 @@ def cleanup_bot():
 
 def signal_handler(sig, frame):
     """Handler para sinais de sistema (SIGTERM, SIGINT)"""
+    _ = frame  # Evita warning de parâmetro não usado
     logger.info(f"🛑 Sinal {sig} recebido, encerrando bot graciosamente...")
     cleanup_bot()
     sys.exit(0)
