@@ -11,7 +11,11 @@ import requests
 from datetime import datetime
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from dotenv import load_dotenv
 from database import get_db
+
+# Carrega variáveis de ambiente do arquivo .env
+load_dotenv()
 
 #======== CONFIGURAÇÃO DE LOGGING E VARIÁVEIS DE AMBIENTE =============
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -36,22 +40,43 @@ except Exception as e:
     db = None
 #================= FECHAMENTO ======================
 
-#======== MAPEAMENTO DE OFERTAS TRIBOPAY (LIMPO E OTIMIZADO) =============
+#======== MAPEAMENTO DE OFERTAS TRIBOPAY (CORRIGIDO CONFORME DOCUMENTAÇÃO) =============
 def get_tribopay_offer_mapping():
-    """Retorna um mapeamento limpo de plano_id para offer_hash."""
+    """Retorna um mapeamento limpo de plano_id para offer_hash com dados completos."""
     return {
-        "plano_1mes": os.getenv('TRIBOPAY_OFFER_VIP_BASICO', 'deq4y2wybn'),   # R$ 24,90
-        "plano_3meses": os.getenv('TRIBOPAY_OFFER_VIP_PREMIUM', 'zawit'),     # R$ 49,90
-        "plano_1ano": os.getenv('TRIBOPAY_OFFER_VIP_COMPLETO', '8qbmp'),      # R$ 67,00
-        "default": os.getenv('TRIBOPAY_OFFER_DEFAULT', 'deq4y2wybn')
+        "plano_1mes": {
+            "offer_hash": os.getenv('TRIBOPAY_OFFER_VIP_BASICO', 'deq4y2wybn'),
+            "price": 2490,  # R$ 24,90
+            "title": "Acesso VIP - Ana Cardoso (1 mês)"
+        },
+        "plano_3meses": {
+            "offer_hash": os.getenv('TRIBOPAY_OFFER_VIP_PREMIUM', 'zawit'),
+            "price": 4990,  # R$ 49,90
+            "title": "Acesso VIP - Ana Cardoso (3 meses)"
+        },
+        "plano_1ano": {
+            "offer_hash": os.getenv('TRIBOPAY_OFFER_VIP_COMPLETO', '8qbmp'),
+            "price": 6700,  # R$ 67,00
+            "title": "Acesso VIP - Ana Cardoso (1 ano)"
+        },
+        "default": {
+            "offer_hash": os.getenv('TRIBOPAY_OFFER_DEFAULT', 'deq4y2wybn'),
+            "price": 2490,  # R$ 24,90
+            "title": "Acesso VIP - Ana Cardoso"
+        }
     }
 
-def get_offer_hash_by_plano_id(plano_id):
-    """Retorna offer_hash baseado no plano_id. Usa 'default' se não encontrar."""
+def get_offer_data_by_plano_id(plano_id):
+    """Retorna dados completos da oferta baseado no plano_id. Usa 'default' se não encontrar."""
     mapping = get_tribopay_offer_mapping()
-    offer_hash = mapping.get(plano_id, mapping["default"])
-    logger.info(f"📦 Mapeamento de oferta: {plano_id} -> {offer_hash}")
-    return offer_hash
+    offer_data = mapping.get(plano_id, mapping["default"])
+    logger.info(f"📦 Mapeamento de oferta: {plano_id} -> {offer_data['offer_hash']} (R$ {offer_data['price']/100:.2f})")
+    return offer_data
+
+# Função para backward compatibility
+def get_offer_hash_by_plano_id(plano_id):
+    """DEPRECATED: Use get_offer_data_by_plano_id() instead."""
+    return get_offer_data_by_plano_id(plano_id)["offer_hash"]
 #================= FECHAMENTO ======================
 
 #======== ENDPOINTS DE UTILIDADE (HEALTH CHECK, ETC) =============
@@ -112,19 +137,34 @@ def gerar_pix():
         else:
             logger.warning(f"⚠️ Usuário {user_id} não encontrado no banco. Tracking não será enviado.")
 
-        # 3. Preparação do Payload para a TriboPay, conforme a documentação
-        offer_hash = get_offer_hash_by_plano_id(plano_id)
-        postback_url = "https://api-gateway-production-22bb.up.railway.app/webhook/tribopay" # Mova para env var se preferir
+        # 3. Preparação do Payload para a TriboPay, EXATAMENTE conforme a documentação oficial
+        offer_data = get_offer_data_by_plano_id(plano_id)
+        offer_hash = offer_data["offer_hash"]
+        offer_price = offer_data["price"]
+        offer_title = offer_data["title"]
+        product_hash = "a8c1r56cgy"  # Product hash fixo do produto "Acesso VIP - Ana Cardoso"
+        postback_url = "https://api-gateway-production-22bb.up.railway.app/webhook/tribopay"
+
+        # Validação crítica: valor solicitado deve coincidir com o preço da oferta
+        valor_centavos = int(float(valor) * 100)
+        if valor_centavos != offer_price:
+            logger.warning(f"⚠️ Valor solicitado ({valor_centavos}) diferente do preço da oferta ({offer_price}). Usando preço da oferta.")
+            valor_centavos = offer_price
 
         tribopay_payload = {
-            "amount": int(float(valor) * 100),
+            "amount": valor_centavos,
             "offer_hash": offer_hash,
             "payment_method": "pix",
+            "installments": 1,  # CRÍTICO: Campo obrigatório conforme teste da API
             "postback_url": postback_url,
             "customer": customer_data,
             "cart": [{
-                "offer_hash": offer_hash,
-                "quantity": 1
+                "product_hash": product_hash,  # CRÍTICO: Usar product_hash, não offer_hash
+                "title": offer_title,          # CRÍTICO: Campo obrigatório
+                "price": valor_centavos,       # CRÍTICO: Campo obrigatório
+                "quantity": 1,
+                "operation_type": 1,           # CRÍTICO: Campo obrigatório (1 = sale)
+                "tangible": False              # CRÍTICO: Campo obrigatório (produto digital)
             }],
             "tracking": {
                 "src": tracking_data.get('click_id'),
@@ -154,8 +194,10 @@ def gerar_pix():
         tribopay_data = response.json()
         transaction_id = tribopay_data.get('hash')
         pix_data = tribopay_data.get('pix', {})
-        pix_code = pix_data.get('code')
-        qr_code = pix_data.get('url')
+        
+        # CRÍTICO: A API TriboPay retorna pix_qr_code e pix_url, não 'code' e 'url'
+        pix_code = pix_data.get('pix_qr_code')  # Código PIX copia e cola
+        qr_code = pix_data.get('pix_url')       # URL para pagamento
 
         if not all([transaction_id, pix_code, qr_code]):
             logger.error(f"❌ Resposta da TriboPay bem-sucedida, mas com dados PIX ausentes: {tribopay_data}")
