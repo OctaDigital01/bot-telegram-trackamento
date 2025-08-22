@@ -229,10 +229,10 @@ class Dashboard {
     }
     
     async loadLogsData() {
-        console.log('📋 Carregando logs do sistema...');
+        console.log('📋 Carregando logs de membros/usuários...');
         
         const filters = this.getDateFilters();
-        const data = await this.apiRequest('/api/logs', { ...filters, limit: 50 });
+        const data = await this.apiRequest('/api/logs', { ...filters, limit: 100 });
         
         if (!data || !data.logs) return;
         
@@ -242,8 +242,8 @@ class Dashboard {
         if (data.logs.length === 0) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="4" style="text-align: center; color: #94a3b8; padding: 2rem;">
-                        Nenhum log encontrado para o período selecionado
+                    <td colspan="5" style="text-align: center; color: #94a3b8; padding: 2rem;">
+                        Nenhum membro encontrado para o período selecionado
                     </td>
                 </tr>
             `;
@@ -252,23 +252,31 @@ class Dashboard {
         
         let html = '';
         data.logs.forEach(log => {
-            const statusClass = this.getLogStatusClass(log.type);
-            const details = this.formatLogDetails(log.details);
+            const pixStatusClass = this.getPixStatusClass(log.pix_status);
             
             html += `
                 <tr>
+                    <td>${this.formatDateTime(log.date)}</td>
                     <td>
-                        <span class="status-badge ${statusClass}">${log.type}</span>
+                        <div style="font-weight: 500;">${this.escapeHtml(log.full_name)}</div>
+                        <div style="font-size: 0.75rem; color: #94a3b8;">ID: ${log.telegram_id}</div>
                     </td>
-                    <td>${log.message}</td>
-                    <td>${this.formatDateTime(log.created_at)}</td>
-                    <td>${details}</td>
+                    <td>
+                        <span class="status-badge info">${log.user_type}</span>
+                    </td>
+                    <td>
+                        <div style="font-size: 0.875rem;">${this.escapeHtml(log.last_step)}</div>
+                    </td>
+                    <td>
+                        <span class="status-badge ${pixStatusClass}">${log.pix_status}</span>
+                        ${log.total_amount_paid > 0 ? `<div style="font-size: 0.75rem; color: #10b981; margin-top: 0.25rem;">${this.formatCurrency(log.total_amount_paid)}</div>` : ''}
+                    </td>
                 </tr>
             `;
         });
         
         tbody.innerHTML = html;
-        console.log('✅ Logs carregados');
+        console.log('✅ Logs de membros carregados');
     }
     
     getLogStatusClass(type) {
@@ -282,6 +290,26 @@ class Dashboard {
             default:
                 return 'info';
         }
+    }
+    
+    getPixStatusClass(status) {
+        switch (status.toLowerCase()) {
+            case 'pago':
+                return 'success';
+            case 'pix gerado':
+                return 'warning';
+            case 'não gerou pix':
+                return 'info';
+            default:
+                return 'info';
+        }
+    }
+    
+    escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
     
     formatLogDetails(details) {

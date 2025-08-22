@@ -850,95 +850,65 @@ def get_sales():
 
 @app.route('/api/logs', methods=['GET'])
 def get_logs():
-    """Logs detalhados do sistema para Dashboard"""
+    """Logs de membros/usuários com informações específicas para Dashboard"""
     try:
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         limit = int(request.args.get('limit', 100))
         
-        logs = []
-        
         if not db:
             return jsonify({'error': 'Database indisponível'}), 500
         
-        date_filter = ""
-        date_params = []
+        # Busca usuários com suas etapas e status PIX
+        users_data = db.get_users_with_steps_and_pix(start_date, end_date, limit)
         
-        if start_date and end_date:
-            date_filter = "WHERE created_at::date BETWEEN %s AND %s"
-            date_params = [start_date, end_date]
+        logs = []
         
-        try:
-            # Logs de conversão
-            conversion_logs = db.execute_query(f"""
-                SELECT 
-                    'conversion' as type,
-                    transaction_id,
-                    click_id,
-                    utm_source,
-                    utm_campaign,
-                    conversion_value,
-                    status,
-                    created_at
-                FROM conversion_logs {date_filter}
-                ORDER BY created_at DESC
-                LIMIT %s
-            """, date_params + [limit])
+        for user in users_data:
+            # Nome completo do usuário
+            first_name = user.get('first_name') or 'Usuário'
+            last_name = user.get('last_name') or ''
+            full_name = f"{first_name} {last_name}".strip()
             
-            if conversion_logs:
-                logs.extend([
-                    {
-                        'type': 'Conversão',
-                        'message': f"Conversão {row['transaction_id']} - {row['status']}",
-                        'details': {
-                            'click_id': row['click_id'],
-                            'utm_source': row['utm_source'],
-                            'utm_campaign': row['utm_campaign'],
-                            'value': float(row['conversion_value']) if row['conversion_value'] else 0
-                        },
-                        'created_at': row['created_at'].isoformat() if row['created_at'] else None
-                    } for row in conversion_logs
-                ])
-        except Exception as e:
-            logger.warning(f"⚠️ Erro ao buscar conversion_logs: {e}")
-        
-        try:
-            # Logs de transações PIX
-            pix_logs = db.execute_query(f"""
-                SELECT 
-                    transaction_id,
-                    telegram_id,
-                    amount,
-                    status,
-                    created_at,
-                    updated_at
-                FROM pix_transactions {date_filter}
-                ORDER BY created_at DESC
-                LIMIT %s
-            """, date_params + [limit])
+            # Determina tipo de usuário/interação
+            user_type = "Bot User"
+            if user.get('username'):
+                user_type = f"@{user.get('username')}"
             
-            if pix_logs:
-                logs.extend([
-                    {
-                        'type': 'PIX',
-                        'message': f"PIX {row['transaction_id']} - {row['status']} - R$ {float(row['amount'])}",
-                        'details': {
-                            'telegram_id': row['telegram_id'],
-                            'amount': float(row['amount']),
-                            'status': row['status'],
-                            'updated_at': row['updated_at'].isoformat() if row['updated_at'] else None
-                        },
-                        'created_at': row['created_at'].isoformat() if row['created_at'] else None
-                    } for row in pix_logs
-                ])
-        except Exception as e:
-            logger.warning(f"⚠️ Erro ao buscar pix_transactions: {e}")
+            # Última etapa
+            last_step = "Etapa 1 (Boas-vindas)"  # Default
+            if user.get('last_step_name'):
+                step_num = user.get('last_step_number', 1)
+                step_desc = user.get('last_step_description') or user.get('last_step_name')
+                last_step = f"Etapa {step_num} ({step_desc})"
+            
+            # Status PIX
+            pix_status = "Não gerou PIX"
+            if user.get('pix_payment_status') == 'PAGO':
+                pix_status = "PAGO"
+            elif user.get('pix_payment_status') == 'PENDENTE':
+                pix_status = "PIX gerado"
+            
+            # Data da última atividade
+            last_activity = user.get('last_activity') or user.get('user_created_at')
+            
+            logs.append({
+                'date': last_activity.isoformat() if last_activity else None,
+                'full_name': full_name,
+                'user_type': user_type,
+                'last_step': last_step,
+                'pix_status': pix_status,
+                'telegram_id': user.get('telegram_id'),
+                'total_pix': user.get('total_pix', 0),
+                'total_paid': user.get('total_paid', 0),
+                'total_amount_paid': float(user.get('total_amount_paid', 0)) if user.get('total_amount_paid') else 0
+            })
         
-        # Ordena por data
-        logs.sort(key=lambda x: x['created_at'] or '', reverse=True)
+        # Ordena por data mais recente
+        logs.sort(key=lambda x: x['date'] or '', reverse=True)
         
-        logger.info(f"✅ Dashboard logs: {len(logs)} logs encontrados")
-        return jsonify({'logs': logs[:limit]})
+        logger.info(f"✅ Dashboard logs membros: {len(logs)} usuários encontrados")
+        return jsonify({'logs': logs})
         
     except Exception as e:
         logger.error(f"❌ Erro em get_logs: {e}")

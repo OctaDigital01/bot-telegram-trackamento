@@ -121,6 +121,25 @@ class DatabaseManager:
                 valor DECIMAL(10,2),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+            """,
+            
+            # Tabela de etapas dos usuários para dashboard logs
+            """
+            CREATE TABLE IF NOT EXISTS user_steps (
+                id SERIAL PRIMARY KEY,
+                telegram_id BIGINT NOT NULL,
+                step_name VARCHAR(100) NOT NULL,
+                step_number INTEGER NOT NULL,
+                step_description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (telegram_id) REFERENCES bot_users(telegram_id)
+            );
+            """,
+            
+            # Índice para performance na busca de última etapa
+            """
+            CREATE INDEX IF NOT EXISTS idx_user_steps_telegram_created 
+            ON user_steps(telegram_id, created_at DESC);
             """
         ]
         
@@ -455,6 +474,120 @@ class DatabaseManager:
             """, (cache_key,))
             return cursor.fetchone()
     
+    def save_user_step(self, telegram_id, step_name, step_number, step_description=None):
+        """Salva etapa do usuário"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO user_steps (telegram_id, step_name, step_number, step_description)
+                    VALUES (%s, %s, %s, %s)
+                """, (telegram_id, step_name, step_number, step_description))
+                logger.info(f"✅ Etapa {step_name} salva para usuário {telegram_id}")
+                return True
+        except Exception as e:
+            logger.error(f"❌ Erro salvando etapa para usuário {telegram_id}: {e}")
+            return False
+    
+    def get_user_last_step(self, telegram_id):
+        """Busca última etapa do usuário"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                cursor.execute("""
+                    SELECT step_name, step_number, step_description, created_at
+                    FROM user_steps 
+                    WHERE telegram_id = %s 
+                    ORDER BY created_at DESC 
+                    LIMIT 1
+                """, (telegram_id,))
+                return cursor.fetchone()
+        except Exception as e:
+            logger.error(f"❌ Erro buscando última etapa do usuário {telegram_id}: {e}")
+            return None
+    
+    def get_users_with_steps_and_pix(self, start_date=None, end_date=None, limit=100):
+        """Busca usuários com suas etapas e status PIX para dashboard logs"""
+        try:
+            date_filter = ""
+            date_params = []
+            
+            if start_date and end_date:
+                date_filter = "AND bu.created_at::date BETWEEN %s AND %s"
+                date_params = [start_date, end_date]
+            
+            with self.get_connection() as conn:
+                cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                query = f"""
+                    SELECT DISTINCT
+                        bu.telegram_id,
+                        bu.first_name,
+                        bu.last_name,
+                        bu.username,
+                        bu.created_at as user_created_at,
+                        bu.updated_at as last_activity,
+                        
+                        -- Última etapa do usuário
+                        last_step.step_name as last_step_name,
+                        last_step.step_number as last_step_number,
+                        last_step.step_description as last_step_description,
+                        last_step.created_at as last_step_at,
+                        
+                        -- Status do PIX (se gerou PIX e se pagou)
+                        CASE 
+                            WHEN pix_gerado.total_pix > 0 THEN 'PIX_GERADO'
+                            ELSE 'SEM_PIX'
+                        END as pix_status,
+                        
+                        CASE 
+                            WHEN pix_pago.total_paid > 0 THEN 'PAGO'
+                            WHEN pix_gerado.total_pix > 0 THEN 'PENDENTE'
+                            ELSE 'SEM_PIX'
+                        END as pix_payment_status,
+                        
+                        pix_gerado.total_pix,
+                        pix_pago.total_paid,
+                        pix_pago.total_amount_paid
+                        
+                    FROM bot_users bu
+                    
+                    -- Última etapa (LEFT JOIN para pegar usuários mesmo sem etapa)
+                    LEFT JOIN (
+                        SELECT DISTINCT ON (telegram_id) 
+                            telegram_id, step_name, step_number, step_description, created_at
+                        FROM user_steps
+                        ORDER BY telegram_id, created_at DESC
+                    ) last_step ON bu.telegram_id = last_step.telegram_id
+                    
+                    -- PIX gerados por usuário
+                    LEFT JOIN (
+                        SELECT telegram_id, COUNT(*) as total_pix
+                        FROM pix_transactions
+                        GROUP BY telegram_id
+                    ) pix_gerado ON bu.telegram_id = pix_gerado.telegram_id
+                    
+                    -- PIX pagos por usuário  
+                    LEFT JOIN (
+                        SELECT 
+                            telegram_id, 
+                            COUNT(*) as total_paid,
+                            SUM(amount) as total_amount_paid
+                        FROM pix_transactions
+                        WHERE status = 'paid'
+                        GROUP BY telegram_id
+                    ) pix_pago ON bu.telegram_id = pix_pago.telegram_id
+                    
+                    WHERE 1=1 {date_filter}
+                    ORDER BY COALESCE(bu.updated_at, bu.created_at) DESC
+                    LIMIT %s
+                """
+                
+                cursor.execute(query, date_params + [limit])
+                return cursor.fetchall()
+        except Exception as e:
+            logger.error(f"❌ Erro buscando usuários com etapas: {e}")
+            return []
+
     def execute_query(self, query, params=None):
         """Executa query SQL e retorna resultados"""
         try:
