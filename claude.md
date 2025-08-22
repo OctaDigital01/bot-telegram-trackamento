@@ -53,9 +53,9 @@ Bot Telegram que:
 ## 🛠️ Credenciais Atuais (Produção)
 
 ### Bot Telegram
-- Username: **@anacardoso0408_bot**
-- Token: `8422752874:AAFHBrpN2fXOPvQf0-k_786AooAQevUh4kY`
-- URL: https://t.me/anacardoso0408_bot
+- Username: **@anacardoso25_bot**
+- Token: `8440864505:AAGaPVQjx9xEKFNmssgFdNNbFTrThZDmZAA`
+- URL: https://t.me/anacardoso25_bot
 
 ### TriboPay Payment Gateway
 - API Key: `IzJsCJ0BleuURRzZvrTeigPp6xknO8e9nHT6WZtDpxFQVocwa3E3GYeNXtYq`
@@ -126,7 +126,7 @@ cd backend/bot && python main.py
 
 ### URLs de Produção
 - **Presell**: https://presell.ana-cardoso.shop
-- **Bot**: https://t.me/anacardoso0408_bot
+- **Bot**: https://t.me/anacardoso25_bot
 - **API Health**: https://api-gateway-production-22bb.up.railway.app/health
 
 ### Teste Manual Completo
@@ -145,7 +145,7 @@ cd backend/bot && python main.py
 - ✅ **URLs personalizadas**: Domínios próprios configurados
 
 ### Funcionalidades ✅
-- ✅ **Bot Telegram**: @anacardoso0408_bot 100% funcional
+- ✅ **Bot Telegram**: @anacardoso25_bot 100% funcional
 - ✅ **Presell responsiva**: Mobile-first, Xtracky integrado
 - ✅ **Tracking híbrido**: Base64 + ID mapping + fallback
 - ✅ **PIX real TriboPay**: Gateway de pagamento em produção
@@ -199,7 +199,7 @@ Xtracky → Presell → PostgreSQL → Bot → TriboPay → Webhook → Xtracky
 ### Produção Ativa 🚀
 - ✅ **PIX reais**: TriboPay em produção (valores R$ 10)
 - ✅ **Conversões reais**: Webhook ativo enviando para Xtracky
-- ✅ **Bot responsivo**: @anacardoso0408_bot 24/7 online
+- ✅ **Bot responsivo**: @anacardoso25_bot 24/7 online
 - ✅ **Presell otimizada**: Mobile-first, carregamento <2s
 
 ### Arquitetura Técnica 🏢
