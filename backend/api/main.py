@@ -377,12 +377,8 @@ def gerar_pix():
                 },
                 "cart": [
                     {
-                        "product_hash": "oq2e0ykgpb",  # Hash do produto principal
-                        "title": f"Plano VIP - R$ {valor:.2f}",
-                        "price": valor_centavos,
-                        "quantity": 1,
-                        "operation_type": 1,
-                        "tangible": False
+                        "offer_hash": offer_hash,  # Hash da oferta específica
+                        "quantity": 1
                     }
                 ],
                 "expire_in_days": 1,  # Mínimo da API
