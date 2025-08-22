@@ -817,7 +817,7 @@ async def enviar_mensagem_pix(context: ContextTypes.DEFAULT_TYPE, chat_id: int, 
     if is_reused:
         tempo_restante = calcular_tempo_restante(pix_data)
         if tempo_restante > 0:
-            caption += f"\n\n⏰ <b>PIX reutilizado - Tempo restante: {tempo_restante} minutos</b>"
+            caption += f"\n\n⏰ <b>{tempo_restante} minutos</b>"
             logger.info(f"♻️ Exibindo PIX reutilizado com {tempo_restante} minutos restantes")
         else:
             caption += f"\n\n⚠️ <b>PIX reutilizado - Finalizando em breve</b>"
