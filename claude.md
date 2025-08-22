@@ -98,6 +98,12 @@ Bot Telegram que:
 - ✅ TESTES REAIS - usar APIs reais sempre
 - ✅ Testar pelo terminal macOS sempre
 
+### 🚀 Controle de Versão GitHub
+- ✅ **Push imediato**: Sempre fazer push no GitHub após implementar correções
+- ✅ **Não acumular commits**: Não deixar commits locais acumulados
+- ✅ **Push após funcionais**: Push imediato após cada conjunto de correções funcionais
+- ✅ **Histórico limpo**: Manter histórico organizado com commits descritivos
+
 ## 💻 Comandos do Bot
 
 ### Comandos Ativos
