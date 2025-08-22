@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Ana Cardoso Bot Analytics</title>
+    <meta name="description" content="Dashboard completa para análise do bot Telegram Ana Cardoso">
+    <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iIzY2NjZmZiI+PHBhdGggZD0iTTEyIDJMMTMuMDkgOC4yNkwyMCA5TDEzLjA5IDE1Ljc0TDEyIDIyTDEwLjkxIDE1Ljc0TDQgOUwxMC45MSA4LjI2TDEyIDJ6Ii8+PC9zdmc+">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #64748b;
+            --accent: #f59e0b;
+            --success: #10b981;
+            --error: #ef4444;
+            --warning: #f59e0b;
+            --info: #3b82f6;
+            
+            --bg-primary: #0f0f23;
+            --bg-secondary: #1e1e3f;
+            --bg-tertiary: #2d2d5a;
+            --bg-card: #1a1a2e;
+            --bg-card-hover: #252547;
+            
+            --text-primary: #ffffff;
+            --text-secondary: #cbd5e1;
+            --text-muted: #94a3b8;
+            
+            --border: #374151;
+            --border-light: #4b5563;
+            
+            --shadow: rgba(0, 0, 0, 0.4);
+            --shadow-lg: rgba(0, 0, 0, 0.6);
+            
+            --gradient: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            --gradient-card: linear-gradient(135deg, var(--bg-card), var(--bg-tertiary));
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 1rem;
+        }
+        
+        /* Header */
+        .header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+        }
+        
+        .header-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem 0;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+        
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: var(--gradient);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 18px;
+        }
+        
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .refresh-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        
+        .refresh-btn:hover {
+            background: var(--primary-dark);
+            transform: translateY(-1px);
+        }
+        
+        .refresh-btn:active {
+            transform: translateY(0);
+        }
+        
+        .refresh-btn.loading {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .refresh-btn.loading .icon {
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Timezone indicator */
+        .timezone {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            background: var(--bg-tertiary);
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+        }
+        
+        /* Tabs */
+        .tabs {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            margin-top: 0;
+        }
+        
+        .tabs-nav {
+            display: flex;
+            gap: 2rem;
+            padding: 0 1rem;
+            overflow-x: auto;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+        
+        .tabs-nav::-webkit-scrollbar {
+            display: none;
+        }
+        
+        .tab-button {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            padding: 1rem 0;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .tab-button:hover {
+            color: var(--text-secondary);
+        }
+        
+        .tab-button.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+        }
+        
+        /* Main content */
+        .main {
+            padding: 2rem 0;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        /* Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .card {
+            background: var(--gradient-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px var(--shadow-lg);
+            border-color: var(--border-light);
+        }
+        
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--gradient);
+        }
+        
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+        }
+        
+        .card-title {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .card-icon {
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .card-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
+        }
+        
+        .card-change {
+            font-size: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+        
+        .card-change.positive {
+            color: var(--success);
+        }
+        
+        .card-change.negative {
+            color: var(--error);
+        }
+        
+        .card-change.neutral {
+            color: var(--text-muted);
+        }
+        
+        /* Filters */
+        .filters {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .filters-header {
+            display: flex;
+            align-items: center;
+            justify-content: between;
+            margin-bottom: 1rem;
+        }
+        
+        .filters-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .filters-content {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            align-items: end;
+        }
+        
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        
+        .filter-label {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+        
+        .filter-input {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.625rem;
+            color: var(--text-primary);
+            font-size: 0.875rem;
+            transition: all 0.2s;
+        }
+        
+        .filter-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+        }
+        
+        .filter-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.625rem 1.25rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: all 0.2s;
+            height: fit-content;
+        }
+        
+        .filter-btn:hover {
+            background: var(--primary-dark);
+        }
+        
+        /* Charts placeholder */
+        .chart-container {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            min-height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .chart-placeholder {
+            text-align: center;
+            color: var(--text-muted);
+        }
+        
+        /* Table */
+        .table-container {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        
+        .table-header {
+            background: var(--bg-tertiary);
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .table-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        
+        .table-wrapper {
+            overflow-x: auto;
+        }
+        
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .table th {
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .table td {
+            padding: 1rem;
+            color: var(--text-primary);
+            font-size: 0.875rem;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .table tbody tr:hover {
+            background: var(--bg-card-hover);
+        }
+        
+        /* Status badges */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        
+        .status-badge.success {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+        }
+        
+        .status-badge.error {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--error);
+        }
+        
+        .status-badge.warning {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--warning);
+        }
+        
+        .status-badge.info {
+            background: rgba(59, 130, 246, 0.1);
+            color: var(--info);
+        }
+        
+        /* Loading state */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 3rem;
+            color: var(--text-muted);
+        }
+        
+        .loading-spinner {
+            width: 24px;
+            height: 24px;
+            border: 2px solid var(--border);
+            border-top: 2px solid var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 0.5rem;
+        }
+        
+        /* Error state */
+        .error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid var(--error);
+            border-radius: 8px;
+            padding: 1rem;
+            color: var(--error);
+            text-align: center;
+            margin: 1rem 0;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: 0 0.75rem;
+            }
+            
+            .header-content {
+                flex-direction: column;
+                gap: 1rem;
+                align-items: flex-start;
+            }
+            
+            .header-actions {
+                width: 100%;
+                justify-content: space-between;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+            
+            .filters-content {
+                grid-template-columns: 1fr;
+            }
+            
+            .card-value {
+                font-size: 1.75rem;
+            }
+            
+            .main {
+                padding: 1rem 0;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .tabs-nav {
+                padding: 0 0.75rem;
+                gap: 1rem;
+            }
+            
+            .tab-button {
+                font-size: 0.8rem;
+            }
+            
+            .filters,
+            .card,
+            .table-container,
+            .chart-container {
+                padding: 1rem;
+            }
+        }
+        
+        /* Quick stats bar */
+        .quick-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .quick-stat {
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            padding: 1rem;
+            text-align: center;
+            border: 1px solid var(--border);
+        }
+        
+        .quick-stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        
+        .quick-stat-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">
+                    <div class="logo-icon">📊</div>
+                    <span>Ana Cardoso Analytics</span>
+                </div>
+                <div class="header-actions">
+                    <div class="timezone">GMT-3</div>
+                    <button class="refresh-btn" onclick="refreshData()">
+                        <span class="icon">🔄</span>
+                        Atualizar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="tabs">
+        <div class="container">
+            <nav class="tabs-nav">
+                <button class="tab-button active" onclick="switchTab('overview')">
+                    <span class="card-icon">📈</span>
+                    Visão Geral
+                </button>
+                <button class="tab-button" onclick="switchTab('sales')">
+                    <span class="card-icon">💰</span>
+                    Vendas
+                </button>
+                <button class="tab-button" onclick="switchTab('logs')">
+                    <span class="card-icon">📋</span>
+                    Logs
+                </button>
+            </nav>
+        </div>
+    </div>
+
+    <main class="main">
+        <div class="container">
+            <!-- Filters Section -->
+            <div class="filters">
+                <div class="filters-header">
+                    <h2 class="filters-title">
+                        <span class="card-icon">🗓️</span>
+                        Filtros
+                    </h2>
+                </div>
+                <div class="filters-content">
+                    <div class="filter-group">
+                        <label class="filter-label">Data Inicial</label>
+                        <input type="date" id="startDate" class="filter-input">
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">Data Final</label>
+                        <input type="date" id="endDate" class="filter-input">
+                    </div>
+                    <div class="filter-group">
+                        <button class="filter-btn" onclick="applyFilters()">Aplicar Filtros</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Overview Tab -->
+            <div id="overview-tab" class="tab-content active">
+                <div class="quick-stats">
+                    <div class="quick-stat">
+                        <div class="quick-stat-value" id="quick-conversion">0%</div>
+                        <div class="quick-stat-label">Taxa de Conversão</div>
+                    </div>
+                    <div class="quick-stat">
+                        <div class="quick-stat-value" id="quick-revenue">R$ 0</div>
+                        <div class="quick-stat-label">Receita Total</div>
+                    </div>
+                    <div class="quick-stat">
+                        <div class="quick-stat-value" id="quick-users">0</div>
+                        <div class="quick-stat-label">Usuários Ativos</div>
+                    </div>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-icon">🌐</span>
+                                Entradas na Presell
+                            </div>
+                        </div>
+                        <div class="card-value" id="presell-entries">-</div>
+                        <div class="card-change neutral">Visitantes únicos</div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-icon">🤖</span>
+                                /start no Bot
+                            </div>
+                        </div>
+                        <div class="card-value" id="bot-starts">-</div>
+                        <div class="card-change neutral">Usuários iniciaram</div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-icon">👋</span>
+                                Primeira Etapa (Boas-vindas)
+                            </div>
+                        </div>
+                        <div class="card-value" id="step-1">-</div>
+                        <div class="card-change neutral">Usuários receberam boas-vindas</div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-icon">👁️</span>
+                                Segunda Etapa (Prévia)
+                            </div>
+                        </div>
+                        <div class="card-value" id="step-2">-</div>
+                        <div class="card-change neutral">Usuários viram prévia</div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-icon">🖼️</span>
+                                Terceira Etapa (Galeria)
+                            </div>
+                        </div>
+                        <div class="card-value" id="step-3">-</div>
+                        <div class="card-change neutral">Usuários acessaram galeria</div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-icon">💎</span>
+                                Quarta Etapa (Planos VIP)
+                            </div>
+                        </div>
+                        <div class="card-value" id="step-4">-</div>
+                        <div class="card-change neutral">Usuários viram planos VIP</div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-icon">💳</span>
+                                Quinta Etapa (Pagamento)
+                            </div>
+                        </div>
+                        <div class="card-value" id="step-5">-</div>
+                        <div class="card-change neutral">Usuários na etapa de pagamento</div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-icon">📱</span>
+                                PIX Gerados
+                            </div>
+                        </div>
+                        <div class="card-value" id="pix-generated">-</div>
+                        <div class="card-change neutral">PIX criados</div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-icon">✅</span>
+                                PIX Pagos
+                            </div>
+                        </div>
+                        <div class="card-value" id="pix-paid">-</div>
+                        <div class="card-change positive">Conversões confirmadas</div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-icon">🚫</span>
+                                Bot Bloqueado
+                            </div>
+                        </div>
+                        <div class="card-value" id="blocked-users">-</div>
+                        <div class="card-change negative">Usuários bloquearam bot</div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-icon">👥</span>
+                                Entrou no Grupo
+                            </div>
+                        </div>
+                        <div class="card-value" id="joined-group">-</div>
+                        <div class="card-change positive">Usuários entraram no grupo</div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-icon">👋</span>
+                                Saiu do Grupo
+                            </div>
+                        </div>
+                        <div class="card-value" id="left-group">-</div>
+                        <div class="card-change negative">Usuários saíram do grupo</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sales Tab -->
+            <div id="sales-tab" class="tab-content">
+                <div class="stats-grid">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-icon">💰</span>
+                                Receita Total
+                            </div>
+                        </div>
+                        <div class="card-value" id="total-revenue">R$ 0,00</div>
+                        <div class="card-change positive">Vendas confirmadas</div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-icon">📊</span>
+                                Total de Transações
+                            </div>
+                        </div>
+                        <div class="card-value" id="total-transactions">0</div>
+                        <div class="card-change neutral">PIX pagos</div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-icon">📈</span>
+                                Taxa de Conversão
+                            </div>
+                        </div>
+                        <div class="card-value" id="conversion-rate">0%</div>
+                        <div class="card-change neutral">PIX pagos / PIX gerados</div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-icon">🎯</span>
+                                Ticket Médio
+                            </div>
+                        </div>
+                        <div class="card-value" id="average-ticket">R$ 0,00</div>
+                        <div class="card-change neutral">Valor médio por venda</div>
+                    </div>
+                </div>
+
+                <div class="chart-container">
+                    <div class="chart-placeholder">
+                        <h3>📈 Vendas por Data</h3>
+                        <p>Gráfico será implementado aqui</p>
+                        <div id="sales-chart-data"></div>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <div class="table-header">
+                        <h3 class="table-title">Vendas por Plano</h3>
+                    </div>
+                    <div class="table-wrapper">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Plano</th>
+                                    <th>Receita</th>
+                                    <th>Transações</th>
+                                    <th>Participação</th>
+                                </tr>
+                            </thead>
+                            <tbody id="sales-by-plan">
+                                <tr>
+                                    <td colspan="4" class="loading">
+                                        <div class="loading-spinner"></div>
+                                        Carregando dados...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Logs Tab -->
+            <div id="logs-tab" class="tab-content">
+                <div class="table-container">
+                    <div class="table-header">
+                        <h3 class="table-title">Logs do Sistema</h3>
+                    </div>
+                    <div class="table-wrapper">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Tipo</th>
+                                    <th>Mensagem</th>
+                                    <th>Data</th>
+                                    <th>Detalhes</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logs-data">
+                                <tr>
+                                    <td colspan="4" class="loading">
+                                        <div class="loading-spinner"></div>
+                                        Carregando logs...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>
