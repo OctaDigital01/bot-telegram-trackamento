@@ -81,7 +81,6 @@ Bot Telegram que:
 - **Dashboard**: dashboard.ana-cardoso.shop (Cloudflare Pages)
 - **API Gateway**: https://api-gateway-production-22bb.up.railway.app (Railway)
 - **Bot Service**: https://bot-telegram-production-35e6.up.railway.app (Railway)
-- **Dashboard API**: https://dashboard-api-production-72a8.up.railway.app (Railway)
 - **Database**: PostgreSQL 16.x (Railway managed)
 
 ## 📏 Regras de Desenvolvimento
@@ -225,7 +224,6 @@ cd backend/bot && python main.py
 - **Dashboard**: https://dashboard.ana-cardoso.shop
 - **Bot**: https://t.me/anacardoso25_bot
 - **API Health**: https://api-gateway-production-22bb.up.railway.app/health
-- **Dashboard API Health**: https://dashboard-api-production-72a8.up.railway.app/health
 
 ### Teste Manual Completo
 1. Acessar: https://presell.ana-cardoso.shop?debug=true
