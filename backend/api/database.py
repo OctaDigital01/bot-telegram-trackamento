@@ -327,6 +327,20 @@ class DatabaseManager:
                 logger.error(f"❌ Erro em get_active_pix: {e}")
                 # Fallback final: retorna None
                 return None
+
+    def get_valid_pix(self, telegram_id, plano_id):
+        """Alias para get_active_pix - mantém compatibilidade"""
+        result = self.get_active_pix(telegram_id, plano_id)
+        if result:
+            # Converte para formato esperado pela API
+            return {
+                'pix_copia_cola': result.get('pix_code'),
+                'qr_code': result.get('qr_code'),
+                'transaction_id': result.get('transaction_id'),
+                'created_at': result.get('created_at'),
+                'status': result.get('status')
+            }
+        return None
     
     def invalidate_user_pix(self, telegram_id):
         """Invalida todos os PIX pendentes do usuário"""

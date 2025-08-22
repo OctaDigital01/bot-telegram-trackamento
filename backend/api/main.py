@@ -118,12 +118,23 @@ def gerar_pix():
         plano_id = data.get('plano_id', 'default')
         customer_data = data.get('customer')
 
-        if not all([user_id, valor, plano_id, customer_data]):
-            return jsonify({'success': False, 'error': 'Campos obrigatórios ausentes: user_id, valor, plano_id, customer'}), 400
+        if not all([user_id, valor, plano_id]):
+            return jsonify({'success': False, 'error': 'Campos obrigatórios ausentes: user_id, valor, plano_id'}), 400
 
-        required_customer_fields = ['name', 'email', 'document', 'phone_number']
-        if not all(k in customer_data for k in required_customer_fields):
-            return jsonify({'success': False, 'error': f'Dados do cliente incompletos. Obrigatórios: {required_customer_fields}'}), 400
+        # Se customer_data não foi fornecido, gera dados genéricos baseados no user_id
+        if not customer_data:
+            customer_data = {
+                'name': f'Usuario {user_id}',
+                'email': f'user{user_id}@telegram.bot',
+                'document': f'{user_id:011d}'[-11:],  # Usa últimos 11 dígitos do user_id como CPF
+                'phone_number': f'11{user_id:09d}'[-11:]  # Gera número de telefone fictício
+            }
+            logger.info(f"🔧 Dados de customer gerados automaticamente para user_id {user_id}")
+        else:
+            # Valida campos obrigatórios apenas se customer_data foi fornecido
+            required_customer_fields = ['name', 'email', 'document', 'phone_number']
+            if not all(k in customer_data for k in required_customer_fields):
+                return jsonify({'success': False, 'error': f'Dados do cliente incompletos. Obrigatórios: {required_customer_fields}'}), 400
 
         if not db:
             return jsonify({'success': False, 'error': 'Serviço indisponível (sem conexão com o banco de dados)'}), 503
@@ -235,7 +246,134 @@ def gerar_pix():
         return jsonify({'success': False, 'error': 'Ocorreu um erro interno no servidor.'}), 500
 #================= FECHAMENTO ======================
 
-#======== LÓGICA DO WEBHOOK (REFINADA) =============
+#======== ENDPOINTS AUSENTES - INVALIDAR PIX =============
+@app.route('/api/pix/invalidar/<int:user_id>', methods=['POST'])
+def invalidar_pix_usuario(user_id):
+    """Invalida todos os PIX pendentes do usuário."""
+    try:
+        if not db:
+            return jsonify({'success': False, 'error': 'Serviço indisponível (sem conexão com o banco de dados)'}), 503
+        
+        # Chama a função do banco para invalidar
+        result = db.invalidate_user_pix(user_id)
+        
+        if result:
+            logger.info(f"🗑️ PIX do usuário {user_id} invalidados com sucesso")
+            return jsonify({'success': True, 'message': f'PIX do usuário {user_id} invalidados'})
+        else:
+            logger.warning(f"⚠️ Nenhum PIX encontrado para invalidar do usuário {user_id}")
+            return jsonify({'success': True, 'message': f'Nenhum PIX encontrado para o usuário {user_id}'})
+            
+    except Exception as e:
+        logger.error(f"❌ Erro ao invalidar PIX do usuário {user_id}: {e}")
+        return jsonify({'success': False, 'error': 'Erro interno do servidor'}), 500
+
+@app.route('/api/tracking/latest', methods=['GET'])
+def get_latest_tracking():
+    """Retorna o último tracking disponível."""
+    try:
+        if not db:
+            return jsonify({'success': False, 'error': 'Serviço indisponível (sem conexão com o banco de dados)'}), 503
+        
+        # Busca último tracking salvo
+        latest = db.get_latest_tracking()
+        
+        if latest:
+            logger.info(f"✅ Último tracking encontrado: {latest.get('id')}")
+            return jsonify({
+                'success': True, 
+                'original': latest.get('original_data', '{}'),
+                'created_at': latest.get('created_at')
+            })
+        else:
+            logger.warning("⚠️ Nenhum tracking encontrado")
+            return jsonify({'success': False, 'error': 'Nenhum tracking encontrado'}), 404
+            
+    except Exception as e:
+        logger.error(f"❌ Erro ao buscar último tracking: {e}")
+        return jsonify({'success': False, 'error': 'Erro interno do servidor'}), 500
+
+@app.route('/api/users', methods=['POST'])
+def save_user():
+    """Salva dados do usuário no banco de dados."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'Corpo da requisição não é um JSON válido'}), 400
+        
+        required_fields = ['telegram_id', 'username', 'first_name', 'tracking_data']
+        if not all(field in data for field in required_fields):
+            return jsonify({'success': False, 'error': f'Campos obrigatórios ausentes: {required_fields}'}), 400
+        
+        if not db:
+            return jsonify({'success': False, 'error': 'Serviço indisponível (sem conexão com o banco de dados)'}), 503
+        
+        # Salva usuário no banco
+        result = db.save_user(
+            telegram_id=data['telegram_id'],
+            username=data['username'], 
+            first_name=data['first_name'],
+            last_name=data.get('last_name', ''),
+            tracking_data=data['tracking_data']
+        )
+        
+        if result:
+            logger.info(f"✅ Usuário {data['telegram_id']} salvo com sucesso")
+            return jsonify({'success': True, 'message': 'Usuário salvo com sucesso'})
+        else:
+            logger.error(f"❌ Falha ao salvar usuário {data['telegram_id']}")
+            return jsonify({'success': False, 'error': 'Falha ao salvar usuário'}), 500
+            
+    except Exception as e:
+        logger.error(f"❌ Erro ao salvar usuário: {e}")
+        return jsonify({'success': False, 'error': 'Erro interno do servidor'}), 500
+
+@app.route('/api/pix/verificar/<int:user_id>/<plano_id>', methods=['GET'])
+def verificar_pix_existente(user_id, plano_id):
+    """Verifica se existe PIX válido para o usuário e plano."""
+    try:
+        if not db:
+            return jsonify({'success': False, 'error': 'Serviço indisponível (sem conexão com o banco de dados)'}), 503
+        
+        # Busca PIX válido para o usuário e plano
+        pix_data = db.get_valid_pix(user_id, plano_id)
+        
+        if pix_data:
+            # Calcula tempo restante
+            from datetime import datetime, timedelta
+            created_at = pix_data.get('created_at')
+            if isinstance(created_at, str):
+                created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+            
+            if created_at:
+                expire_time = created_at + timedelta(hours=1)
+                now = datetime.now(created_at.tzinfo) if created_at.tzinfo else datetime.now()
+                tempo_restante = expire_time - now
+                
+                if tempo_restante.total_seconds() > 0:
+                    tempo_min = int(tempo_restante.total_seconds() / 60)
+                    pix_data['tempo_restante'] = f"{tempo_min} minutos"
+                    
+                    logger.info(f"✅ PIX válido encontrado para usuário {user_id}, plano {plano_id}")
+                    return jsonify({
+                        'success': True,
+                        'pix_valido': True,
+                        'pix_data': pix_data
+                    })
+        
+        logger.info(f"⚠️ Nenhum PIX válido encontrado para usuário {user_id}, plano {plano_id}")
+        return jsonify({
+            'success': True,
+            'pix_valido': False,
+            'pix_data': None
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao verificar PIX do usuário {user_id}: {e}")
+        return jsonify({'success': False, 'error': 'Erro interno do servidor'}), 500
+#================= FECHAMENTO ======================
+
+#======== LÓGICA DO WEBHOOK (CORRIGIDA) =============
 @app.route('/webhook/tribopay', methods=['POST'])
 def tribopay_webhook():
     """Webhook para receber e processar notificações da TriboPay."""
@@ -247,11 +385,22 @@ def tribopay_webhook():
         logger.info(f"📥 Webhook da TriboPay recebido.")
         logger.debug(f"Webhook Payload: {json.dumps(webhook_data)}")
 
-        transaction_data = webhook_data.get('transaction', {})
-        transaction_id = transaction_data.get('id')
+        # CORREÇÃO CRÍTICA: Verifica se transaction é string ou objeto
+        transaction_data = webhook_data.get('transaction')
+        if isinstance(transaction_data, str):
+            # Se for string, converte para dict
+            try:
+                transaction_data = json.loads(transaction_data)
+            except json.JSONDecodeError:
+                logger.error(f"❌ transaction_data é string mas não é JSON válido: {transaction_data}")
+                return jsonify({'status': 'erro', 'reason': 'transaction data inválido'}), 400
+        elif not isinstance(transaction_data, dict):
+            transaction_data = {}
+        
+        transaction_id = transaction_data.get('id') or transaction_data.get('hash')
         
         if not transaction_id:
-            logger.warning("⚠️ Webhook recebido sem 'transaction.id'. Ignorando.")
+            logger.warning("⚠️ Webhook recebido sem 'transaction.id' ou 'transaction.hash'. Ignorando.")
             return jsonify({'status': 'ignorado', 'reason': 'missing transaction.id'}), 200
 
         status = webhook_data.get('status')
