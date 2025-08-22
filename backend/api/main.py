@@ -340,6 +340,40 @@ def save_user():
         logger.error(f"❌ Erro ao salvar usuário: {e}")
         return jsonify({'success': False, 'error': 'Erro interno do servidor'}), 500
 
+@app.route('/api/users/step', methods=['POST'])
+def save_user_step():
+    """Salva etapa do usuário no funil."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'Corpo da requisição não é um JSON válido'}), 400
+        
+        required_fields = ['telegram_id', 'step_name', 'step_number']
+        if not all(field in data for field in required_fields):
+            return jsonify({'success': False, 'error': f'Campos obrigatórios ausentes: {required_fields}'}), 400
+        
+        if not db:
+            return jsonify({'success': False, 'error': 'Serviço indisponível (sem conexão com o banco de dados)'}), 503
+        
+        # Salva etapa do usuário
+        result = db.save_user_step(
+            telegram_id=data['telegram_id'],
+            step_name=data['step_name'], 
+            step_number=data['step_number'],
+            step_description=data.get('step_description')
+        )
+        
+        if result:
+            logger.info(f"✅ Etapa {data['step_name']} salva para usuário {data['telegram_id']}")
+            return jsonify({'success': True, 'message': 'Etapa salva com sucesso'})
+        else:
+            logger.error(f"❌ Falha ao salvar etapa para usuário {data['telegram_id']}")
+            return jsonify({'success': False, 'error': 'Falha ao salvar etapa'}), 500
+            
+    except Exception as e:
+        logger.error(f"❌ Erro ao salvar etapa: {e}")
+        return jsonify({'success': False, 'error': 'Erro interno do servidor'}), 500
+
 @app.route('/api/tracking/save', methods=['POST', 'OPTIONS'])
 def save_tracking():
     """Salva dados de tracking (mapeamento de ID)."""
