@@ -255,8 +255,14 @@ async def delete_message_if_exists(context: ContextTypes.DEFAULT_TYPE, key: str,
         if chat_id and message_id:
             try:
                 await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+                logger.info(f"🗑️ Mensagem {message_id} deletada com sucesso no chat {chat_id}")
             except BadRequest as e:
-                logger.warning(f"⚠️ Não foi possível deletar a mensagem {message_id} no chat {chat_id}: {e}")
+                if "message to delete not found" in str(e).lower() or "message not found" in str(e).lower():
+                    logger.warning(f"⚠️ Mensagem {message_id} no chat {chat_id} já foi deletada ou não existe mais")
+                else:
+                    logger.warning(f"⚠️ Erro ao deletar mensagem {message_id} no chat {chat_id}: {e}")
+            except Exception as e:
+                logger.error(f"❌ Erro crítico ao deletar mensagem {message_id} no chat {chat_id}: {e}")
             finally:
                 del context.user_data[key] # Limpa a chave após a tentativa
     #================= FECHAMENTO ======================
@@ -274,8 +280,14 @@ async def delete_message_if_exists_bot_data(context: ContextTypes.DEFAULT_TYPE, 
         if message_id:
             try:
                 await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+                logger.info(f"🗑️ Mensagem {message_id} deletada com sucesso no chat {chat_id}")
             except BadRequest as e:
-                logger.warning(f"⚠️ Não foi possível deletar a mensagem {message_id} no chat {chat_id}: {e}")
+                if "message to delete not found" in str(e).lower() or "message not found" in str(e).lower():
+                    logger.warning(f"⚠️ Mensagem {message_id} no chat {chat_id} já foi deletada ou não existe mais")
+                else:
+                    logger.warning(f"⚠️ Erro ao deletar mensagem {message_id} no chat {chat_id}: {e}")
+            except Exception as e:
+                logger.error(f"❌ Erro crítico ao deletar mensagem {message_id} no chat {chat_id}: {e}")
             finally:
                 del context.bot_data['message_ids'][key] # Limpa a chave após a tentativa
     #================= FECHAMENTO ======================
@@ -434,9 +446,20 @@ async def callback_trigger_etapa3(update: Update, context: ContextTypes.DEFAULT_
     
     logger.info(f"👤 ETAPA 3: Usuário {chat_id} clicou para ver prévias.")
     
-    # Remove o fallback e a mensagem anterior, depois avança
+    # Remove o fallback e tenta deletar mensagem anterior
     await remove_job_if_exists(f"job_etapa3_{chat_id}", context)
+    
+    # Tenta deletar a mensagem atual (do botão clicado) - mais confiável
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=query.message.message_id)
+        logger.info(f"🗑️ Mensagem da etapa 2 deletada diretamente (botão clicado)")
+    except BadRequest as e:
+        logger.warning(f"⚠️ Não foi possível deletar mensagem do botão clicado: {e}")
+    
+    # Também tenta deletar via user_data como backup
     await delete_message_if_exists(context, 'etapa2_msg_id')
+    
+    # Avança para próxima etapa
     await job_etapa3_galeria(context, chat_id_manual=chat_id)
     #================= FECHAMENTO ======================
 
@@ -494,9 +517,23 @@ async def callback_trigger_etapa4(update: Update, context: ContextTypes.DEFAULT_
     
     logger.info(f"👤 ETAPA 4: Usuário {chat_id} clicou para conhecer o VIP.")
     
-    # Remove o fallback mas NÃO deleta mensagem anterior (mantém histórico)
+    # Remove o fallback e tenta deletar mensagem anterior
     await remove_job_if_exists(f"job_etapa3_remarketing_{chat_id}", context)
+    
+    # Tenta deletar a mensagem atual (do botão clicado) - mais confiável
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=query.message.message_id)
+        logger.info(f"🗑️ Mensagem da etapa 3 deletada diretamente (botão clicado)")
+    except BadRequest as e:
+        if "message to delete not found" in str(e).lower() or "message not found" in str(e).lower():
+            logger.warning(f"⚠️ Mensagem da etapa 3 já foi deletada")
+        else:
+            logger.warning(f"⚠️ Não foi possível deletar mensagem do botão clicado: {e}")
+    
+    # Também tenta limpar via bot_data (permite deletar false para manter histórico)
     await delete_message_if_exists_bot_data(context, f'etapa3_{chat_id}', chat_id, allow_delete=False)
+    
+    # Avança para próxima etapa
     await job_etapa4_planos_vip(context, chat_id_manual=chat_id)
     #================= FECHAMENTO ======================
     
@@ -737,9 +774,21 @@ async def callback_escolher_outro_plano(update: Update, context: ContextTypes.DE
     
     logger.info(f"🔄 Usuário {user_id} quer escolher outro plano")
     
-    # NÃO invalida PIX atual para não apagar PIX anterior
-    # O usuário pode querer voltar ao PIX que já estava sendo processado
-    logger.info(f"🔄 Usuário {user_id} está escolhendo outro plano (mantendo PIX anterior)")
+    # DELETA a mensagem do PIX atual (a mensagem que contém o botão clicado)
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=query.message.message_id)
+        logger.info(f"🗑️ Mensagem do PIX atual deletada para usuário {user_id}")
+    except BadRequest as e:
+        logger.warning(f"⚠️ Não foi possível deletar mensagem do PIX atual: {e}")
+    
+    # Invalida PIX atual - usuário está mudando de ideia
+    invalidou_pix = await invalidar_pix_usuario(user_id)
+    if invalidou_pix:
+        logger.info(f"🗑️ PIX anterior invalidado para usuário {user_id} ao escolher outro plano")
+    
+    # Remove job de timeout PIX se existir
+    await remove_job_if_exists(f"timeout_pix_{user_id}", context)
+    logger.info(f"⏰ Job de timeout PIX cancelado para usuário {user_id} ao escolher outro plano")
     
     # Texto motivacional para upgrade
     texto_upgrade = (
