@@ -430,7 +430,7 @@ def verificar_pix_existente(user_id, plano_id):
                 created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
             
             if created_at:
-                expire_time = created_at + timedelta(hours=1)
+                expire_time = created_at + timedelta(minutes=15)
                 now = datetime.now(created_at.tzinfo) if created_at.tzinfo else datetime.now()
                 tempo_restante = expire_time - now
                 logger.info(f"⏰ Tempo restante calculado: {tempo_restante.total_seconds()} segundos")

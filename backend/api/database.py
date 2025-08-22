@@ -320,7 +320,7 @@ class DatabaseManager:
             return cursor.fetchone()
 
     def get_active_pix(self, telegram_id, plano_id):
-        """Buscar PIX ativo para usuário e plano específico (válido por 1h)"""
+        """Buscar PIX ativo para usuário e plano específico (válido por 15 minutos)"""
         with self.get_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
@@ -340,7 +340,7 @@ class DatabaseManager:
                         WHERE telegram_id = %s 
                         AND plano_id = %s 
                         AND status IN ('pending', 'waiting_payment') 
-                        AND created_at > NOW() - INTERVAL '1 hour'
+                        AND created_at > NOW() - INTERVAL '15 minutes'
                         ORDER BY created_at DESC 
                         LIMIT 1
                     """, (telegram_id, plano_id))
@@ -352,7 +352,7 @@ class DatabaseManager:
                         SELECT * FROM pix_transactions 
                         WHERE telegram_id = %s 
                         AND status IN ('pending', 'waiting_payment') 
-                        AND created_at > NOW() - INTERVAL '1 hour'
+                        AND created_at > NOW() - INTERVAL '15 minutes'
                         ORDER BY created_at DESC 
                         LIMIT 1
                     """, (telegram_id,))

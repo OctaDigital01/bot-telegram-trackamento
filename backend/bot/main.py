@@ -293,8 +293,8 @@ def calcular_tempo_restante(pix_data: dict) -> int:
                 logger.warning("🔄 Usando fallback de 30 minutos para PIX com data inválida")
                 return 30
         
-        # Calcula tempo de expiração (1 hora após criação)
-        expire_time = created_at + timedelta(hours=1)
+        # Calcula tempo de expiração (15 minutos após criação)
+        expire_time = created_at + timedelta(minutes=15)
         now = datetime.now(created_at.tzinfo) if created_at.tzinfo else datetime.now()
         tempo_restante = expire_time - now
         
