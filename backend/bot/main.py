@@ -13,13 +13,15 @@ import asyncio
 import json
 import base64
 import httpx
+import signal
+import sys
 from datetime import datetime, timedelta
 from html import escape
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaVideo
 from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler, ChatJoinRequestHandler
 from telegram.constants import ParseMode
-from telegram.error import BadRequest
+from telegram.error import BadRequest, Conflict
 
 # Carregar variáveis do arquivo .env
 load_dotenv()
@@ -27,6 +29,9 @@ load_dotenv()
 # ==============================================================================
 # 1. CONFIGURAÇÃO GERAL E INICIALIZAÇÃO
 # ==============================================================================
+
+# Variável global para controlar instância única
+_BOT_INSTANCE = None
 
 # ======== CONFIGURAÇÃO DE LOGGING =============
 logging.basicConfig(
@@ -814,35 +819,78 @@ async def callback_escolher_outro_plano(update: Update, context: ContextTypes.DE
 # ==============================================================================
 # 4. FUNÇÃO PRINCIPAL E EXECUÇÃO DO BOT
 # ==============================================================================
+def cleanup_bot():
+    """Limpa recursos do bot ao encerrar"""
+    global _BOT_INSTANCE
+    if _BOT_INSTANCE:
+        try:
+            asyncio.run(http_client.aclose())
+            logger.info("🔒 Cliente HTTP encerrado")
+        except Exception as e:
+            logger.error(f"❌ Erro fechando cliente HTTP: {e}")
+        _BOT_INSTANCE = None
+
+def signal_handler(sig, frame):
+    """Handler para sinais de sistema (SIGTERM, SIGINT)"""
+    logger.info(f"🛑 Sinal {sig} recebido, encerrando bot graciosamente...")
+    cleanup_bot()
+    sys.exit(0)
+
 def main():
     #======== INICIALIZA E EXECUTA O BOT =============
+    global _BOT_INSTANCE
+    
+    # Verifica se já existe uma instância rodando
+    if _BOT_INSTANCE:
+        logger.warning("⚠️ Bot já está rodando, abortando nova instância")
+        return
+    
     required_vars = ['TELEGRAM_BOT_TOKEN', 'API_GATEWAY_URL', 'GRUPO_GRATIS_ID', 'GRUPO_GRATIS_INVITE_LINK', 'MEDIA_APRESENTACAO', 'MEDIA_VIDEO_QUENTE', 'MEDIA_PREVIA_SITE', 'MEDIA_PROVOCATIVA']
     if any(not os.getenv(var) for var in required_vars):
         logger.critical("❌ ERRO CRÍTICO: Variáveis de ambiente obrigatórias não configuradas. Verifique o arquivo .env")
         return
+    
+    # Configura handlers de sinal para graceful shutdown
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
         
     logger.info("🤖 === BOT COM FUNIL OTIMIZADO INICIANDO ===")
-    
-    application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Registra os handlers
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(ChatJoinRequestHandler(handle_join_request))
-    application.add_handler(CallbackQueryHandler(callback_trigger_etapa3, pattern='^trigger_etapa3$'))
-    application.add_handler(CallbackQueryHandler(callback_trigger_etapa4, pattern='^trigger_etapa4$'))
-    application.add_handler(CallbackQueryHandler(callback_processar_plano, pattern='^plano:'))
-    application.add_handler(CallbackQueryHandler(callback_ja_paguei, pattern='^ja_paguei:'))
-    application.add_handler(CallbackQueryHandler(callback_escolher_outro_plano, pattern='^escolher_outro_plano$'))
-    
-    logger.info("🚀 Bot iniciado com sucesso! Aguardando interações...")
+    if BOT_TOKEN:
+        logger.info(f"🔑 Token Bot: {BOT_TOKEN[:20]}...")
+    else:
+        logger.error("❌ Token do bot não configurado!")
     
     try:
+        application = Application.builder().token(BOT_TOKEN).build()
+        _BOT_INSTANCE = application
+        
+        # Registra os handlers
+        application.add_handler(CommandHandler("start", start_command))
+        application.add_handler(ChatJoinRequestHandler(handle_join_request))
+        application.add_handler(CallbackQueryHandler(callback_trigger_etapa3, pattern='^trigger_etapa3$'))
+        application.add_handler(CallbackQueryHandler(callback_trigger_etapa4, pattern='^trigger_etapa4$'))
+        application.add_handler(CallbackQueryHandler(callback_processar_plano, pattern='^plano:'))
+        application.add_handler(CallbackQueryHandler(callback_ja_paguei, pattern='^ja_paguei:'))
+        application.add_handler(CallbackQueryHandler(callback_escolher_outro_plano, pattern='^escolher_outro_plano$'))
+        
+        logger.info("🚀 Bot iniciado com sucesso! Aguardando interações...")
+        
         # Adicionado 'chat_join_request' aos updates permitidos
-        application.run_polling(allowed_updates=['message', 'callback_query', 'chat_join_request'])
+        application.run_polling(
+            allowed_updates=['message', 'callback_query', 'chat_join_request'],
+            drop_pending_updates=True  # Remove updates pendentes para evitar conflitos
+        )
+        
+    except Conflict as conflict_error:
+        logger.error(f"❌ CONFLITO DETECTADO - Outra instância do bot está rodando: {conflict_error}")
+        logger.error("🔧 SOLUÇÃO: Encerre outras instâncias do bot ou aguarde alguns segundos")
+        return
+    except Exception as e:
+        logger.error(f"❌ Erro crítico na inicialização do bot: {e}")
+        return
     finally:
-        # Garante que o cliente HTTP seja fechado corretamente ao encerrar o bot
-        asyncio.run(http_client.aclose())
-        logger.info("🔒 Cliente HTTP e bot encerrados.")
+        cleanup_bot()
+        logger.info("🔒 Bot encerrado.")
     #================= FECHAMENTO ======================
 
 if __name__ == '__main__':

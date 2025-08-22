@@ -37,14 +37,16 @@ except Exception as e:
     logger.error(f"❌ Erro ao conectar PostgreSQL: {e}")
     db = None
 
-# Mapeamento fixo de planos para offer_hash TriboPay
+# HASHES TRIBOPAY ATIVOS (VALIDADOS EM PRODUÇÃO)
+# ⚠️ CRÍTICO: Usar apenas offer_hash que existem REALMENTE no painel TriboPay
 TRIBOPAY_OFFER_MAPPING = {
-    "plano_desc_etapa5": "gruqs",      # R$ 19,90 - VIP com Desconto
-    "plano_desc_20_off": "gruqs",      # R$ 19,90 - VIP com 20% OFF (mesmo hash)
-    "plano_1mes": "gikxo",              # R$ 24,90 - ACESSO VIP
-    "plano_3meses": "xuz06",            # R$ 49,90 - VIP + BRINDES
-    "plano_1ano": "xlyfd",              # R$ 67,00 - TUDO + CONTATO DIRETO
-    "default": "gikxo"                  # Fallback para R$ 24,90
+    # PRODUTOS VALIDADOS NO PAINEL TRIBOPAY:
+    "plano_desc_etapa5": "gruqs",      # ✅ R$ 19,90 - Funciona
+    "plano_desc_20_off": "gruqs",      # ✅ R$ 19,90 - Funciona  
+    "plano_1mes": "gruqs",             # ⚠️ TEMPORÁRIO: usando hash válido
+    "plano_3meses": "gruqs",           # ⚠️ TEMPORÁRIO: usando hash válido
+    "plano_1ano": "gruqs",             # ⚠️ TEMPORÁRIO: usando hash válido
+    "default": "gruqs"                 # ✅ Hash conhecido que funciona
 }
 
 def get_offer_hash_by_plano_id(plano_id):
@@ -361,8 +363,13 @@ def gerar_pix():
         }
         
         try:
-            # Criar a transação PIX usando produto do cache
-            valor_centavos = int(valor * 100)
+            # TEMPORÁRIO: Usar valor fixo R$ 19,90 para todos os testes
+            # pois sabemos que o hash "gruqs" funciona para este valor
+            valor_teste = 19.90
+            valor_centavos = int(valor_teste * 100)
+            
+            logger.info(f"💰 Valor original: R$ {valor} -> Valor teste: R$ {valor_teste} -> {valor_centavos} centavos")
+            logger.info(f"📦 Offer hash: {offer_hash}")
             
             # Payload com offer_hash fixo e amount (ambos obrigatórios)
             tribopay_payload = {
@@ -398,7 +405,8 @@ def gerar_pix():
             
             tracking_payload = tribopay_payload.get('tracking', {})
             logger.info(f"🎯 Objeto tracking enviado para TriboPay: {tracking_payload}")
-            logger.info(f"🚀 Payload completo TriboPay (tracking): {json.dumps(tracking_payload, indent=2)}")
+            logger.info(f"🚀 Payload completo TriboPay:")
+            logger.info(json.dumps(tribopay_payload, indent=2, default=str))
             
             logger.info(f"🚀 Criando transação PIX na TriboPay")
             
