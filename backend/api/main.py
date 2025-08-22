@@ -963,11 +963,12 @@ def clear_database():
         
         # Lista das tabelas principais de dados (preserva estrutura)
         tables_to_clear = [
-            'conversion_logs',      # Logs de conversão Xtracky
-            'pix_transactions',     # Transações PIX TriboPay
-            'bot_users',           # Usuários do bot
-            'tracking_mapping',     # Mapeamento de tracking presell
-            'bot_interactions'      # Interações do bot (se existir)
+            'conversion_logs',            # Logs de conversão Xtracky
+            'pix_transactions',           # Transações PIX TriboPay
+            'bot_users',                 # Usuários do bot
+            'tracking_mapping',           # Mapeamento de tracking presell
+            'tribopay_products_cache',    # Cache de produtos TriboPay
+            'bot_interactions'            # Interações do bot (se existir)
         ]
         
         cleared_tables = []
