@@ -100,13 +100,23 @@ http_client = httpx.AsyncClient(
 async def verificar_pix_existente(user_id: int, plano_id: str):
     #======== VERIFICA SE JÁ EXISTE PIX VÁLIDO PARA O PLANO =============
     try:
+        logger.info(f"🔍 Verificando PIX existente para usuário {user_id}, plano {plano_id}")
         response = await http_client.get(f"{API_GATEWAY_URL}/api/pix/verificar/{user_id}/{plano_id}")
+        
         if response.status_code == 200:
             result = response.json()
+            logger.info(f"📋 Resposta verificação PIX: {result}")
+            
             if result.get('success') and result.get('pix_valido'):
+                logger.info(f"✅ PIX válido encontrado para usuário {user_id}")
                 return result.get('pix_data')
+            else:
+                logger.info(f"ℹ️ Nenhum PIX válido encontrado para usuário {user_id}")
+        else:
+            logger.error(f"❌ Erro HTTP {response.status_code} verificando PIX: {response.text}")
+            
     except Exception as e:
-        logger.error(f"❌ Erro verificando PIX existente: {e}")
+        logger.error(f"❌ Erro crítico verificando PIX existente: {e}")
     return None
     #================= FECHAMENTO ======================
 
@@ -350,9 +360,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if result.get('success'):
                 logger.info(f"✅ Usuário {user.id} salvo com sucesso na API")
             else:
-                logger.error(f"❌ API retornou erro: {result}")
+                logger.error(f"❌ API retornou erro ao salvar usuário: {result}")
+                # Continua o fluxo mesmo se não salvar tracking
         else:
-            logger.error(f"❌ Erro HTTP salvando usuário {user.id}: {response.status_code} - {response.text}")
+            logger.error(f"❌ Erro HTTP {response.status_code} salvando usuário {user.id}: {response.text}")
+            # Continua o fluxo mesmo se API falhar
             
     except Exception as e:
         logger.error(f"❌ Erro crítico salvando usuário {user.id}: {e}")
@@ -624,7 +636,17 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
         logger.info(f"♻️ Reutilizando PIX existente para {user_id} - Plano: {plano_selecionado['nome']}")
         
         pix_copia_cola = pix_existente['pix_copia_cola']
-        qr_code_url = pix_existente.get('qr_code') or f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={pix_copia_cola}"
+        qr_code_base = pix_existente.get('qr_code')
+        
+        # CORREÇÃO: Garantir URL completa para QR Code
+        if qr_code_base and not qr_code_base.startswith('http'):
+            qr_code_url = f"https://{qr_code_base}"
+        elif qr_code_base:
+            qr_code_url = qr_code_base
+        else:
+            qr_code_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={pix_copia_cola}"
+        
+        logger.info(f"🔗 QR Code URL formada: {qr_code_url}")
         
         caption = (
             f"💎 <b>Seu PIX está aqui, meu amor!</b>\n\n"
@@ -755,8 +777,15 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
             logger.warning(f"⚠️ Não foi possível deletar mensagem de loading: {e}")
             # Continua o processo mesmo se não conseguir deletar
         
-        # Gera QR code URL (usa API externa se não vier da TriboPay)
-        qr_code_url = qr_code_base or f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={pix_copia_cola}"
+        # CORREÇÃO: Gera QR code URL com validação de protocolo
+        if qr_code_base and not qr_code_base.startswith('http'):
+            qr_code_url = f"https://{qr_code_base}"
+        elif qr_code_base:
+            qr_code_url = qr_code_base
+        else:
+            qr_code_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={pix_copia_cola}"
+        
+        logger.info(f"🔗 QR Code URL final: {qr_code_url}")
         
         caption = (
             f"💎 <b>Seu PIX está aqui, meu amor!</b>\n\n"
