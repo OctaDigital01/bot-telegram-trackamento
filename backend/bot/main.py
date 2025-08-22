@@ -813,14 +813,12 @@ async def enviar_mensagem_pix(context: ContextTypes.DEFAULT_TYPE, chat_id: int, 
         f"💰 <b>Valor: R$ {plano['valor']:.2f}</b>"
     )
     
-    # Se PIX foi reutilizado, adiciona informação de tempo restante
+    # Se PIX foi reutilizado, apenas registra nos logs (sem exibir tempo ao usuário)
     if is_reused:
         tempo_restante = calcular_tempo_restante(pix_data)
         if tempo_restante > 0:
-            caption += f"\n\n⏰ <b>{tempo_restante} minutos</b>"
             logger.info(f"♻️ Exibindo PIX reutilizado com {tempo_restante} minutos restantes")
         else:
-            caption += f"\n\n⚠️ <b>PIX reutilizado - Finalizando em breve</b>"
             logger.warning(f"⚠️ PIX reutilizado mas tempo quase expirado")
     keyboard = [
         [InlineKeyboardButton("✅ JÁ PAGUEI", callback_data=f"ja_paguei:{plano['id']}")],
