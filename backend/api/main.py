@@ -37,21 +37,22 @@ except Exception as e:
     logger.error(f"❌ Erro ao conectar PostgreSQL: {e}")
     db = None
 
-# HASHES TRIBOPAY ATIVOS (VALIDADOS EM PRODUÇÃO)
-# ⚠️ CRÍTICO: Usar apenas offer_hash que existem REALMENTE no painel TriboPay
-TRIBOPAY_OFFER_MAPPING = {
-    # PRODUTOS VALIDADOS NO PAINEL TRIBOPAY:
-    "plano_desc_etapa5": "gruqs",      # ✅ R$ 19,90 - Funciona
-    "plano_desc_20_off": "gruqs",      # ✅ R$ 19,90 - Funciona  
-    "plano_1mes": "gruqs",             # ⚠️ TEMPORÁRIO: usando hash válido
-    "plano_3meses": "gruqs",           # ⚠️ TEMPORÁRIO: usando hash válido
-    "plano_1ano": "gruqs",             # ⚠️ TEMPORÁRIO: usando hash válido
-    "default": "gruqs"                 # ✅ Hash conhecido que funciona
-}
+# HASHES TRIBOPAY CONFIGURADOS VIA VARIÁVEIS DE AMBIENTE
+def get_tribopay_offer_mapping():
+    """Retorna mapeamento de ofertas via variáveis de ambiente"""
+    return {
+        "plano_desc_etapa5": os.getenv('TRIBOPAY_OFFER_DESCONTO', 'gruqs'),
+        "plano_desc_20_off": os.getenv('TRIBOPAY_OFFER_DESCONTO', 'gruqs'),
+        "plano_1mes": os.getenv('TRIBOPAY_OFFER_VIP_BASICO', 'gruqs'),
+        "plano_3meses": os.getenv('TRIBOPAY_OFFER_VIP_PREMIUM', 'gruqs'),
+        "plano_1ano": os.getenv('TRIBOPAY_OFFER_VIP_COMPLETO', 'gruqs'),
+        "default": os.getenv('TRIBOPAY_OFFER_DEFAULT', 'gruqs')
+    }
 
 def get_offer_hash_by_plano_id(plano_id):
-    """Retorna offer_hash fixo baseado no plano_id"""
-    offer_hash = TRIBOPAY_OFFER_MAPPING.get(plano_id, TRIBOPAY_OFFER_MAPPING["default"])
+    """Retorna offer_hash baseado no plano_id via env vars"""
+    mapping = get_tribopay_offer_mapping()
+    offer_hash = mapping.get(plano_id, mapping["default"])
     logger.info(f"📦 Offer hash mapeado: {plano_id} -> {offer_hash}")
     return offer_hash
 
@@ -369,34 +370,26 @@ def gerar_pix():
             logger.info(f"💰 Processando valor: R$ {valor} -> {valor_centavos} centavos")
             logger.info(f"📦 Offer hash: {offer_hash}")
             
-            # ABORDAGEM ALTERNATIVA: Criar produto dinâmico primeiro
-            # Usar valores fixos conhecidos para teste
-            logger.info("🔧 MODO DEBUG: Criando transação com valores básicos para teste")
+            # Payload otimizado com offer_hash correto
+            logger.info(f"✅ Criando transação TriboPay com offer_hash: {offer_hash}")
             
-            # Payload mínimo com produto de teste
+            # Payload correto (baseado nos testes realizados)
             tribopay_payload = {
                 "amount": valor_centavos,
-                "offer_hash": "test",  # Hash de teste - será criado dinamicamente 
+                "offer_hash": offer_hash,  # Hash real da oferta
                 "payment_method": "pix",
+                "installments": 1,  # Campo obrigatório
                 "customer": {
                     "name": user_data.get('first_name', 'Cliente') if user_data else 'Cliente',
                     "email": f"user{user_id}@telegram.com",
                     "phone_number": "11999999999",
                     "document": "00000000000"
                 },
-                "product": {
-                    "name": f"Plano VIP - {plano_id}",
-                    "description": f"Acesso completo ao conteúdo VIP - R$ {valor}",
-                    "amount": valor_centavos
-                },
                 "cart": [{
-                    "name": f"Plano VIP - {plano_id}",
-                    "amount": valor_centavos,
+                    "offer_hash": offer_hash,
                     "quantity": 1
                 }],
                 "expire_in_days": 1,
-                "transaction_origin": "api", 
-                "installments": 1,
                 "postback_url": "https://api-gateway-production-22bb.up.railway.app/webhook/tribopay",
                 # TRACKING UTM - Formato correto para TriboPay (baseado no webhook)
                 "tracking": {
