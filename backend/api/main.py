@@ -98,7 +98,7 @@ def index():
     """Endpoint raiz com informações básicas."""
     return jsonify({
         'service': 'API Gateway - Integração TriboPay',
-        'version': '2.0-corrigida',
+        'version': '2.1-dados-reais-telegram',
         'status': 'online'
     })
 #================= FECHAMENTO ======================
