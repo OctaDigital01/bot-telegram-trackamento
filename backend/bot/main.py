@@ -13,15 +13,7 @@ import asyncio
 import json
 import base64
 import httpx
-import random
-from datetime import datetime, timedelta
-# import fcntl  # Para file locking - NÃO FUNCIONA NO WINDOWS
-try:
-    import fcntl  # Unix/Linux apenas
-    HAS_FCNTL = True
-except ImportError:
-    # Windows não tem fcntl
-    HAS_FCNTL = False
+import fcntl  # Para file locking
 import tempfile
 import signal
 import atexit
@@ -33,19 +25,7 @@ from telegram.constants import ParseMode
 from telegram.error import BadRequest, Conflict
 
 # Carregar variáveis do arquivo .env
-# Para teste local, carrega .env.local se existir
-import os.path
-# Caminho do diretório onde está este script
-script_dir = os.path.dirname(os.path.abspath(__file__))
-env_local_path = os.path.join(script_dir, '.env.local')
-env_path = os.path.join(script_dir, '.env')
-
-if os.path.isfile(env_local_path):
-    load_dotenv(env_local_path)
-    print("📌 Usando configuração LOCAL (.env.local)")
-else:
-    load_dotenv(env_path)
-    print("📌 Usando configuração PADRÃO (.env)")
+load_dotenv()
 
 # ==============================================================================
 # 1. CONFIGURAÇÃO GERAL E INICIALIZAÇÃO
@@ -59,36 +39,16 @@ _LOCK_FILE_PATH = None
 def create_lock_file():
     """Cria arquivo de lock para garantir instância única"""
     global _LOCK_FILE, _LOCK_FILE_PATH
-    
-    # Para teste local, permite desabilitar o sistema de lock
-    if os.getenv('DISABLE_LOCK_SYSTEM', 'false').lower() == 'true':
-        logger.info("🔓 Sistema de lock desabilitado para teste local")
-        return True
-    
     try:
         # Usa diretório temporário do sistema para o lock
         lock_dir = tempfile.gettempdir()
         _LOCK_FILE_PATH = os.path.join(lock_dir, 'telegram_bot_ana_cardoso.lock')
         
-        # Verifica se já existe lock (Windows alternative)
-        if not HAS_FCNTL:
-            # Windows: verifica se arquivo existe e se processo ainda está rodando
-            if os.path.exists(_LOCK_FILE_PATH):
-                try:
-                    with open(_LOCK_FILE_PATH, 'r') as f:
-                        old_pid = f.read().strip()
-                    logger.warning(f"⚠️ Lock file existe (PID: {old_pid}). Removendo para Windows...")
-                    os.remove(_LOCK_FILE_PATH)
-                except:
-                    pass
-        
         # Cria ou abre o arquivo de lock
         _LOCK_FILE = open(_LOCK_FILE_PATH, 'w')
         
         # Tenta obter lock exclusivo (não-bloqueante)
-        if HAS_FCNTL:
-            fcntl.flock(_LOCK_FILE.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        # Windows: apenas cria o arquivo (fallback)
+        fcntl.flock(_LOCK_FILE.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         
         # Escreve PID no arquivo
         _LOCK_FILE.write(f"{os.getpid()}\n")
@@ -123,8 +83,7 @@ def cleanup_lock_file():
     global _LOCK_FILE, _LOCK_FILE_PATH
     try:
         if _LOCK_FILE:
-            if HAS_FCNTL:
-                fcntl.flock(_LOCK_FILE.fileno(), fcntl.LOCK_UN)
+            fcntl.flock(_LOCK_FILE.fileno(), fcntl.LOCK_UN)
             _LOCK_FILE.close()
             _LOCK_FILE = None
             logger.info("🔓 Lock de instância liberado")
@@ -149,169 +108,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 # ==============================================
-
-# ==============================================================================
-# 2. SISTEMA MOCK PARA TESTE LOCAL (REMOVER EM PRODUÇÃO)
-# ==============================================================================
-
-class MockResponse:
-    """Classe para simular resposta HTTP"""
-    def __init__(self, status_code: int, json_data: dict):
-        self.status_code = status_code
-        self._json_data = json_data
-        self.text = json.dumps(json_data)
-    
-    def json(self):
-        return self._json_data
-    
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            raise Exception(f"HTTP {self.status_code}: {self.text}")
-
-class MockAPIGateway:
-    """Mock da API Gateway para teste local - REMOVER EM PRODUÇÃO"""
-    
-    def __init__(self):
-        self.mock_data = {}
-        self.pix_counter = 1000
-        
-    def is_mock_mode(self):
-        """Verifica se está em modo mock (localhost)"""
-        return os.getenv('API_GATEWAY_URL', '').startswith('http://localhost')
-    
-    def generate_mock_pix(self, user_id: int, plano: dict):
-        """Gera dados PIX simulados"""
-        self.pix_counter += 1
-        transaction_id = f"MOCK_{self.pix_counter}"
-        
-        # PIX Code simulado mais realista (formato EMV)
-        # Campo 26: URL PIX fictícia  
-        mock_url = f"pix.mock.com/qr/v2/{random.randint(10000000, 99999999):08x}-{random.randint(1000, 9999):04x}-{random.randint(1000, 9999):04x}-{random.randint(10000, 99999):05x}"
-        # Campo 62: Transaction ID no formato correto
-        txid_field = f"05{len(transaction_id):02d}{transaction_id}"
-        
-        pix_base = f"00020126{len(mock_url) + 18:02d}0014br.gov.bcb.pix25{len(mock_url):02d}{mock_url}5204000053039865802BR5925MOCK TRIBOPAY PAGAMENTOS6014BELO HORIZONTE62{len(txid_field):02d}{txid_field}6304"
-        
-        # Calcular CRC16 simulado (mock)
-        mock_crc = f"{random.randint(0, 65535):04X}"
-        pix_code = pix_base + mock_crc
-        
-        # QR Code simulado (base64 de uma imagem pequena)
-        qr_code_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
-        
-        # Expiration simulada (30 minutos)
-        expires_at = (datetime.now() + timedelta(minutes=30)).isoformat()
-        
-        mock_pix = {
-            "transaction_id": transaction_id,
-            "pix_code": pix_code,
-            "qr_code": qr_code_base64,
-            "amount": plano.get("preco", 10.0),
-            "status": "pending",
-            "expires_at": expires_at,
-            "created_at": datetime.now().isoformat()
-        }
-        
-        # Armazena no mock data
-        self.mock_data[f"pix_{user_id}_{plano['id']}"] = mock_pix
-        
-        logger.info(f"🧪 MOCK PIX GERADO: {transaction_id} para user {user_id}")
-        return mock_pix
-    
-    async def mock_api_call(self, method: str, url: str, **kwargs):
-        """Simula chamadas da API"""
-        logger.info(f"🧪 MOCK API CALL: {method} {url}")
-        
-        # Simula delay da rede
-        await asyncio.sleep(0.1)
-        
-        # Parse da URL para identificar o endpoint
-        if "/api/pix/verificar/" in url:
-            # GET /api/pix/verificar/{user_id}/{plano_id}
-            parts = url.split("/")
-            user_id = int(parts[-2])
-            plano_id = parts[-1]
-            
-            key = f"pix_{user_id}_{plano_id}"
-            if key in self.mock_data:
-                pix_data = self.mock_data[key]
-                return MockResponse(200, {
-                    'success': True,
-                    'pix_valido': True,
-                    'pix_data': pix_data
-                })
-            else:
-                return MockResponse(200, {
-                    'success': True,
-                    'pix_valido': False,
-                    'message': 'Nenhum PIX válido encontrado'
-                })
-        
-        elif "/api/pix/invalidar/" in url:
-            # POST /api/pix/invalidar/{user_id}
-            user_id = int(url.split("/")[-1])
-            
-            # Remove todos os PIX do usuário
-            keys_to_remove = [k for k in self.mock_data.keys() if f"pix_{user_id}_" in k]
-            for key in keys_to_remove:
-                del self.mock_data[key]
-                
-            return MockResponse(200, {
-                'success': True,
-                'invalidated': len(keys_to_remove)
-            })
-        
-        elif "/api/users" in url:
-            # POST /api/users
-            return MockResponse(200, {
-                'success': True,
-                'message': 'Usuário salvo com sucesso (mock)'
-            })
-        
-        elif "/api/tracking/last/" in url:
-            # GET /api/tracking/last/{user_id}
-            return MockResponse(200, {
-                'success': True,
-                'tracking_data': {
-                    'utm_source': 'mock_source',
-                    'utm_medium': 'mock_medium',
-                    'click_id': f'mock_click_{random.randint(1000, 9999)}'
-                }
-            })
-        
-        elif "/api/pix/gerar" in url:
-            # POST /api/pix/gerar
-            data = kwargs.get('json', {})
-            user_id = data.get('user_id')
-            plano_id = data.get('plano_id')
-            
-            # Simula geração de PIX
-            plano_info = {
-                'id': plano_id,
-                'preco': data.get('amount', 10.0)
-            }
-            mock_pix = self.generate_mock_pix(user_id, plano_info)
-            
-            return MockResponse(200, {
-                'success': True,
-                'message': 'PIX gerado com sucesso (mock)',
-                'pix_copia_cola': mock_pix['pix_code'],
-                'qr_code': mock_pix['qr_code'],
-                'transaction_id': mock_pix['transaction_id'],
-                'amount': mock_pix['amount'],
-                'expires_at': mock_pix['expires_at'],
-                'status': mock_pix['status']
-            })
-        
-        # Fallback para qualquer outra chamada
-        return MockResponse(200, {
-            'success': True,
-            'message': 'Mock response',
-            'mock': True
-        })
-
-# Instância global do mock
-mock_api = MockAPIGateway()
 
 # ======== VARIÁVEIS DE AMBIENTE (CRÍTICAS) =============
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -365,30 +161,11 @@ CONFIGURACAO_BOT = {
 }
 # ========================================================
 
-# ======== CLIENTE HTTP ASSÍNCRONO COM MOCK =============
+# ======== CLIENTE HTTP ASSÍNCRONO =============
 http_client = httpx.AsyncClient(
     timeout=httpx.Timeout(10.0, read=30.0),
     limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
 )
-
-# Wrapper para interceptar chamadas HTTP em modo mock
-async def http_request(method: str, url: str, **kwargs):
-    """Wrapper para interceptar chamadas HTTP e usar mock se necessário"""
-    if mock_api.is_mock_mode() and API_GATEWAY_URL in url:
-        # Modo mock - simula a resposta
-        return await mock_api.mock_api_call(method, url, **kwargs)
-    else:
-        # Modo real - faz a chamada HTTP normal
-        if method.upper() == 'GET':
-            return await http_client.get(url, **kwargs)
-        elif method.upper() == 'POST':
-            return await http_client.post(url, **kwargs)
-        elif method.upper() == 'PUT':
-            return await http_client.put(url, **kwargs)
-        elif method.upper() == 'DELETE':
-            return await http_client.delete(url, **kwargs)
-        else:
-            raise ValueError(f"Método HTTP não suportado: {method}")
 # ==============================================
 
 # ==============================================================================
@@ -440,7 +217,7 @@ async def verificar_pix_existente(user_id: int, plano_id: str):
     try:
         logger.info(f"🔍 VERIFICANDO PIX EXISTENTE: user_id={user_id}, plano_id={plano_id}")
         logger.info(f"📡 CHAMANDO API VERIFICAÇÃO: GET {API_GATEWAY_URL}/api/pix/verificar/{user_id}/{plano_id}")
-        response = await http_request("GET", f"{API_GATEWAY_URL}/api/pix/verificar/{user_id}/{plano_id}")
+        response = await http_client.get(f"{API_GATEWAY_URL}/api/pix/verificar/{user_id}/{plano_id}")
         logger.info(f"📡 RESPONSE VERIFICAÇÃO: status={response.status_code}")
         
         if response.status_code == 200:
@@ -544,7 +321,7 @@ async def invalidar_pix_usuario(user_id: int):
     #======== INVALIDA TODOS OS PIX PENDENTES DO USUÁRIO =============
     try:
         logger.info(f"📡 CHAMANDO API INVALIDAÇÃO: POST {API_GATEWAY_URL}/api/pix/invalidar/{user_id}")
-        response = await http_request("POST", f"{API_GATEWAY_URL}/api/pix/invalidar/{user_id}")
+        response = await http_client.post(f"{API_GATEWAY_URL}/api/pix/invalidar/{user_id}")
         logger.info(f"📡 RESPONSE INVALIDAÇÃO: status={response.status_code}")
         
         if response.status_code == 200:
@@ -580,7 +357,7 @@ async def decode_tracking_data(encoded_param: str):
         logger.info("⚠️ Parâmetro vazio ou 'no_tracking' - tentando fallback último tracking")
         # Fallback: busca último tracking disponível
         try:
-            response = await http_request("GET", f"{API_GATEWAY_URL}/api/tracking/latest")
+            response = await http_client.get(f"{API_GATEWAY_URL}/api/tracking/latest")
             if response.status_code == 200:
                 result = response.json()
                 if result.get('success'):
@@ -596,7 +373,7 @@ async def decode_tracking_data(encoded_param: str):
         if encoded_param.startswith('M') and len(encoded_param) <= 15:  # Aumentado limite
             logger.info(f"🔍 Método 1: Tentando buscar ID mapeado '{encoded_param}'")
             try:
-                response = await http_request("GET", f"{API_GATEWAY_URL}/api/tracking/get/{encoded_param}")
+                response = await http_client.get(f"{API_GATEWAY_URL}/api/tracking/get/{encoded_param}")
                 logger.info(f"📡 Response status da API: {response.status_code}")
                 
                 if response.status_code == 200:
@@ -676,24 +453,8 @@ async def job_timeout_pix(context: ContextTypes.DEFAULT_TYPE):
         if await invalidar_pix_usuario(user_id):
             logger.info(f"🗑️ PIX expirado invalidado para usuário {user_id}")
         
-        texto_desconto_timeout = (
-            "😳 <b>Opa, meu amor... vi que você não finalizou o pagamento!</b>\n\n"
-            "💔 Sei que às vezes a gente fica na dúvida, né?\n\n"
-            "🎁 <b>ÚLTIMA CHANCE:</b> Vou liberar um <b>DESCONTO ESPECIAL</b> só pra você!\n\n"
-            "⚡ <b>20% OFF + Bônus Exclusivos!</b>\n\n"
-            "🔥 <b>É AGORA OU NUNCA, amor...</b> 👇"
-        )
-        
-        plano_desc = REMARKETING_PLANS["plano_desc_20_off"]
-        keyboard = [[InlineKeyboardButton(plano_desc["botao_texto"], callback_data=f"plano:{plano_desc['id']}")]]
-        
-        await context.bot.send_message(
-            chat_id=chat_id, 
-            text=texto_desconto_timeout, 
-            reply_markup=InlineKeyboardMarkup(keyboard), 
-            parse_mode='HTML'
-        )
-        logger.info(f"✅ Mensagem de desconto especial enviada para {user_id}")
+        # Apenas invalida o PIX, sem enviar mensagem de desconto
+        logger.info(f"✅ PIX invalidado silenciosamente para {user_id}")
         
     except Exception as e:
         logger.error(f"❌ Erro no timeout PIX para usuário {user_id}: {e}")
@@ -755,7 +516,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'last_name': user.last_name or '',
             'tracking_data': tracking_data
         }
-        response = await http_request("POST", f"{API_GATEWAY_URL}/api/users", json=user_data_payload)
+        response = await http_client.post(f"{API_GATEWAY_URL}/api/users", json=user_data_payload)
         if response.status_code == 200 and response.json().get('success'):
             logger.info(f"✅ Usuário {user.id} salvo/atualizado na API")
         else:
@@ -765,9 +526,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if await check_if_user_is_member(context, user.id):
         text = "Oi meu bem! 😍 Você já faz parte do grupinho grátis!\n\nQuer ver um pouquinho do que tenho pra te mostrar? 🔥⬇️"
-        keyboard = [[InlineKeyboardButton("VER FOTOS/VÍDEOS", callback_data='trigger_etapa3')]]
+        keyboard = [[InlineKeyboardButton("VER CONTEÚDINHO 🥵", callback_data='trigger_etapa3')]]
         await context.bot.send_photo(chat_id=chat_id, photo=MEDIA_APRESENTACAO, caption=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
-        context.job_queue.run_once(job_etapa3_galeria, CONFIGURACAO_BOT["DELAYS"]["ETAPA_1_FALLBACK"], chat_id=chat_id, name=f"job_etapa3_{chat_id}", data={'chat_id': chat_id})
+        context.job_queue.run_once(job_etapa3_galeria, CONFIGURACAO_BOT["DELAYS"]["ETAPA_2_FALLBACK"], chat_id=chat_id, name=f"job_etapa3_{chat_id}", data={'chat_id': chat_id})
     else:
         text = "Meu bem, entra no meu *GRUPINHO GRÁTIS* pra ver daquele jeito q vc gosta 🥵⬇️"
         keyboard = [[InlineKeyboardButton("ENTRAR NO GRUPO 🥵", url=GROUP_INVITE_LINK)]]
@@ -812,9 +573,9 @@ async def approve_user_callback(context: ContextTypes.DEFAULT_TYPE):
     #================= FECHAMENTO ======================
 
 # ------------------------- ETAPA 2: PROMPT DE PRÉVIA -------------------------
-async def job_etapa2_prompt_previa(context: ContextTypes.DEFAULT_TYPE, chat_id_manual=None):
-    #======== ENVIA PERGUNTA SOBRE PRÉVIAS (FALLBACK) - SÓ APÓS ETAPA 1A =============
-    chat_id = chat_id_manual or context.job.data['chat_id']
+async def job_etapa2_prompt_previa(context: ContextTypes.DEFAULT_TYPE):
+    #======== ENVIA PERGUNTA SOBRE PRÉVIAS (FALLBACK) =============
+    chat_id = context.job.data['chat_id']
     logger.info(f"⏰ ETAPA 2: Enviando prompt de prévia para {chat_id}.")
     
     text = "Jájá te aceito no grupo meu bem. Quer ver um pedacinho do que te espera... 🔥\n\n(É DE GRAÇA!!!) ⬇️"
@@ -950,18 +711,11 @@ async def job_etapa4_desconto(context: ContextTypes.DEFAULT_TYPE):
     
     # NÃO apaga mensagem anterior - mantém Etapa 4 visível
     
-    # Envia áudio audio_etapa4b.ogg da pasta local
+    # Envia áudio audio_etapa4b.ogg usando file_id
     try:
-        import os
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        audio_path = os.path.join(script_dir, 'audio_etapa4b.ogg')
-        
-        if os.path.exists(audio_path):
-            with open(audio_path, 'rb') as audio_file:
-                await context.bot.send_voice(chat_id=chat_id, voice=audio_file)
-            logger.info(f"✅ Áudio Etapa 4B enviado para {chat_id}")
-        else:
-            logger.warning(f"⚠️ Arquivo audio_etapa4b.ogg não encontrado em {audio_path}")
+        # File_id do áudio da etapa 4B
+        await context.bot.send_voice(chat_id=chat_id, voice="CQACAgEAAxkBAAIXYGiqMFqvGXuWYJ3WKn6AOPXClfWyAAKtCAACSLxQRdVnlmjQl-ALNgQ")
+        logger.info(f"✅ Áudio Etapa 4B enviado para {chat_id}")
     except Exception as e:
         logger.error(f"❌ Erro ao enviar áudio Etapa 4B para {chat_id}: {e}")
     
@@ -985,121 +739,6 @@ Vem pro VIP meu bem...🥵⬇️"""
     
     # Agenda Etapa 6 para 10 minutos depois
     context.job_queue.run_once(job_etapa6_remarketing, 600, chat_id=chat_id, name=f"job_etapa6_{chat_id}", data={'chat_id': chat_id})  # 600 segundos = 10 minutos
-    #================= FECHAMENTO ======================
-
-# ------------------------- ETAPA 6: REMARKETING 10 MINUTOS APÓS ETAPA 4B -------------------------
-async def job_etapa6_remarketing(context: ContextTypes.DEFAULT_TYPE):
-    #======== REMARKETING 10 MINUTOS APÓS ETAPA 4B =============
-    chat_id = context.job.data['chat_id']
-    logger.info(f"⏰ ETAPA 6: Remarketing 10min após Etapa 4B para {chat_id}.")
-    
-    # Envia vídeo da Etapa 6 com file_id específico
-    try:
-        await context.bot.send_video(chat_id=chat_id, video="BAACAgEAAxkBAAIjimiqCA1Xhl7o_BTOR0G-YQlphqQKAAI3BQACOohRRWZNIu3q7uzKNgQ")
-        logger.info(f"✅ Vídeo Etapa 6 enviado para {chat_id}")
-    except Exception as e:
-        logger.error(f"❌ Erro ao enviar vídeo Etapa 6 para {chat_id}: {e}")
-    
-    texto_etapa6 = """Meu bem, soltei conteúdinho novo, vem ver...
-
-Eu postei cavalgando no brinquedinho, mas coloquei a camera de baixo pra cima, <b>fingindo que eu tava em cima de você, sentando no seu pau e gemeeendo pra ti</b>...
-
-Vem ver e go.zar gostoso pra mim💦 (depois me fala se gostou desse tipo de vídeo tá?)🥵⬇️"""
-    
-    keyboard = [[InlineKeyboardButton("IR PRO VIP E VER VIDEO NOVO🥵🔥", callback_data='trigger_etapa4')]]
-    
-    await context.bot.send_message(chat_id=chat_id, text=texto_etapa6, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-    
-    # Agenda Etapa 7 para as 21:00 do dia seguinte
-    await schedule_etapa7_for_next_day_21h(context, chat_id)
-    #================= FECHAMENTO ======================
-
-# ------------------------- ETAPA 7: REMARKETING 21:00 DIA SEGUINTE -------------------------
-async def job_etapa7_remarketing(context: ContextTypes.DEFAULT_TYPE):
-    #======== REMARKETING 21:00 DO DIA SEGUINTE =============
-    chat_id = context.job.data['chat_id']
-    logger.info(f"⏰ ETAPA 7: Remarketing 21:00 dia seguinte para {chat_id}.")
-    
-    # Envia vídeo da Etapa 7 com file_id específico
-    try:
-        await context.bot.send_video(chat_id=chat_id, video="BAACAgEAAxkBAAIjkWiqCN5UjFt6LAt6kTdkk0UVhHMwAAI6BQACOohRRe_A42EcnpXONgQ")
-        logger.info(f"✅ Vídeo Etapa 7 enviado para {chat_id}")
-    except Exception as e:
-        logger.error(f"❌ Erro ao enviar vídeo Etapa 7 para {chat_id}: {e}")
-    
-    texto_etapa7 = """🔥Meu bem, olhá o que você tá perdendo...
-
-Quando você quiser, pode marcar uma <b>chamada de vídeo comigo</b>, onde faço <b>tudinho que você mandar até você g0.zar</b>, basta vir pro meu <b>VIP</b>.
-Só precisa se mostrar pra mim se você quiser, ta bom?
-
-E você vai ter tudo isso aqui que já falei também também:
-💎 Vídeos e fotos do jeitinho que você gosta...
-💎 Videos exclusivo pra você, te fazendo go.zar só eu e você
-💎 Meu contato pessoal
-💎 Sempre posto coisa nova
-💎 Chamada de vídeo só nós 2
-💎 E muito mais meu bem...
-
-<b>Vem ver os conteúdinhos e vamos marcar uma chamada de video</b>, só eu e você. Se quiser pode ser agora ou mais tarde, to disponível...
-
-Posso te fazer g0.zar só eu e vc? 🥵⬇️"""
-    
-    keyboard = [[InlineKeyboardButton("IR PRO VIP🥵🔥", callback_data='trigger_etapa4')]]
-    
-    await context.bot.send_message(chat_id=chat_id, text=texto_etapa7, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-    
-    # Agenda Etapa 8 para as 21:00 do dia seguinte (2 dias após início)
-    await schedule_etapa8_for_next_day_21h(context, chat_id)
-    #================= FECHAMENTO ======================
-
-# ------------------------- ETAPA 8: REMARKETING FINAL COM PROMOÇÃO R$19,90 -------------------------
-async def job_etapa8_remarketing(context: ContextTypes.DEFAULT_TYPE):
-    #======== REMARKETING FINAL COM PROMOÇÃO ESPECIAL =============
-    chat_id = context.job.data['chat_id']
-    logger.info(f"⏰ ETAPA 8: Remarketing final com promoção R$19,90 para {chat_id}.")
-    
-    # Envia vídeo da Etapa 8 com file_id específico
-    try:
-        await context.bot.send_video(chat_id=chat_id, video="BAACAgEAAxkBAAIjnWiqCf5kk6uSMsDKwX4H0UlFU6uoAAI7BQACOohRRbyGIhSBxV5XNgQ")
-        logger.info(f"✅ Vídeo Etapa 8 enviado para {chat_id}")
-    except Exception as e:
-        logger.error(f"❌ Erro ao enviar vídeo Etapa 8 para {chat_id}: {e}")
-    
-    # Envia áudio audio_etapa8.ogg da pasta local
-    try:
-        import os
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        audio_path = os.path.join(script_dir, 'audio_etapa8.ogg')
-        
-        if os.path.exists(audio_path):
-            with open(audio_path, 'rb') as audio_file:
-                await context.bot.send_voice(chat_id=chat_id, voice=audio_file)
-            logger.info(f"✅ Áudio Etapa 8 enviado para {chat_id}")
-        else:
-            logger.warning(f"⚠️ Arquivo audio_etapa8.ogg não encontrado em {audio_path}")
-    except Exception as e:
-        logger.error(f"❌ Erro ao enviar áudio Etapa 8 para {chat_id}: {e}")
-    
-    texto_etapa8 = """Como te falei, é <b>sua primeira e única chance de vir pro VIP com promoção QUASE DE GRAÇA</b> (Eu não fico oferecendo promoção)...
-
-Meu vip de 1 ano, onde você tem tudinho! Era R$67,00, <b>mas hoje (AGORA!) vai ser só R$19,90...</b>
-
-Vem meu bem, ter tudo que já te falei:
-💎 Vídeos e fotos do jeitinho que você gosta...
-💎 Videos exclusivo pra você, te fazendo go.zar só eu e você
-💎 Meu contato pessoal
-💎 Sempre posto coisa nova
-💎 Chamada de vídeo só nós 2
-💎 E muito mais meu bem...
-
-<b>🔥Primeira e última chance de vir pro VIP com desconto! (PROMOÇÃO SÓ ATÉ AMANHÃ CEDO EM)</b>
-
-Vem me ver daquele jeitinho e go.zar gostoso pra mim💦🥵⬇️"""
-    
-    # Botão especial com promoção R$19,90
-    keyboard = [[InlineKeyboardButton("SER VIP POR 1 ANO (19,90)🥵🔥", callback_data="plano:promo_1990")]]
-    
-    await context.bot.send_message(chat_id=chat_id, text=texto_etapa8, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
     #================= FECHAMENTO ======================
 
 # ------------------------- ETAPA 5: PROCESSAMENTO DO PAGAMENTO -------------------------
@@ -1178,7 +817,7 @@ async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT
             'plano_id': plano_id,
             'customer': customer_data  # Envia dados reais do Telegram
         }
-        response = await http_request("POST", f"{API_GATEWAY_URL}/api/pix/gerar", json=pix_data)
+        response = await http_client.post(f"{API_GATEWAY_URL}/api/pix/gerar", json=pix_data)
         response.raise_for_status()
         result = response.json()
         if not result.get('success') or not result.get('pix_copia_cola'):
@@ -1298,110 +937,144 @@ async def callback_escolher_outro_plano(update: Update, context: ContextTypes.DE
     await context.bot.send_message(chat_id=chat_id, text=texto_upgrade, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
     #================= FECHAMENTO ======================
 
-# ------------------------- COMANDO /file_id (APENAS PARA TESTE LOCAL) -------------------------
-async def file_id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Comando para capturar file_id de mídias enviadas ao bot.
-    APENAS PARA TESTE LOCAL - REMOVER EM PRODUÇÃO!
-    """
-    user = update.effective_user
-    chat_id = update.effective_chat.id
+# ------------------------- ETAPA 6: REMARKETING 10 MINUTOS APÓS ETAPA 4B -------------------------
+async def job_etapa6_remarketing(context: ContextTypes.DEFAULT_TYPE):
+    #======== REMARKETING 10 MINUTOS APÓS ETAPA 4B =============
+    chat_id = context.job.data['chat_id']
+    logger.info(f"⏰ ETAPA 6: Remarketing 10min após Etapa 4B para {chat_id}.")
     
-    # Verifica se é admin (opcional, mas recomendado)
-    admin_id = os.getenv('ADMIN_ID')
-    if admin_id and str(user.id) != str(admin_id):
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text="❌ Comando disponível apenas para administradores."
-        )
-        return
+    # Envia vídeo da Etapa 6 com file_id específico
+    try:
+        await context.bot.send_video(chat_id=chat_id, video="BAACAgEAAxkBAAIXZGiqMId7WvFAv3AFIvJ5Ig_SbtmhAAKvCAACSLxQRaEFVeU3OogzNgQ")
+        logger.info(f"✅ Vídeo Etapa 6 enviado para {chat_id}")
+    except Exception as e:
+        logger.error(f"❌ Erro ao enviar vídeo Etapa 6 para {chat_id}: {e}")
     
-    # Verifica se tem mídia armazenada
-    if 'last_media_id' in context.user_data:
-        media_info = context.user_data['last_media_id']
-        response = (
-            "📎 <b>Último arquivo recebido:</b>\n\n"
-            f"<b>Tipo:</b> {media_info.get('type', 'Desconhecido')}\n"
-            f"<b>File ID:</b>\n<code>{media_info.get('file_id', 'Não disponível')}</code>\n\n"
-            f"<i>Copie o ID acima e cole no arquivo .env.local</i>"
-        )
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=response,
-            parse_mode='HTML'
-        )
-    else:
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text="❌ Nenhuma mídia foi enviada ainda.\n\n"
-                 "📤 Envie uma foto ou vídeo primeiro, depois use /file_id"
-        )
+    texto_etapa6 = """Meu bem, soltei conteúdinho novo, vem ver...
+
+Eu postei cavalgando no brinquedinho, mas coloquei a camera de baixo pra cima, <b>fingindo que eu tava em cima de você, sentando no seu pau e gemeeendo pra ti</b>...
+
+Vem ver e go.zar gostoso pra mim💦 (depois me fala se gostou desse tipo de vídeo tá?)🥵⬇️"""
+    
+    keyboard = [[InlineKeyboardButton("IR PRO VIP E VER VIDEO NOVO🥵🔥", callback_data='trigger_etapa4')]]
+    
+    await context.bot.send_message(chat_id=chat_id, text=texto_etapa6, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    
+    # Agenda Etapa 7 para as 21:00 do dia seguinte
+    await schedule_etapa7_for_next_day_21h(context, chat_id)
     #================= FECHAMENTO ======================
 
-async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Handler para capturar mídias enviadas ao bot.
-    APENAS PARA TESTE LOCAL - REMOVER EM PRODUÇÃO!
-    """
-    message = update.message
-    chat_id = update.effective_chat.id
+# ------------------------- ETAPA 7: REMARKETING 21:00 DIA SEGUINTE -------------------------
+async def job_etapa7_remarketing(context: ContextTypes.DEFAULT_TYPE):
+    #======== REMARKETING 21:00 DO DIA SEGUINTE =============
+    chat_id = context.job.data['chat_id']
+    logger.info(f"⏰ ETAPA 7: Remarketing 21:00 dia seguinte para {chat_id}.")
     
-    media_info = {}
+    # Envia vídeo da Etapa 7 com file_id específico
+    try:
+        await context.bot.send_video(chat_id=chat_id, video="BAACAgEAAxkBAAIXZmiqMKgFraZU6UMdVFvm7AHFRHAuAAKwCAACSLxQRQlfBCM4aB3cNgQ")
+        logger.info(f"✅ Vídeo Etapa 7 enviado para {chat_id}")
+    except Exception as e:
+        logger.error(f"❌ Erro ao enviar vídeo Etapa 7 para {chat_id}: {e}")
     
-    # Detecta tipo de mídia e captura file_id
-    if message.photo:
-        # Para fotos, pega a maior resolução (última da lista)
-        media_info = {
-            'type': 'Foto',
-            'file_id': message.photo[-1].file_id
-        }
-    elif message.video:
-        media_info = {
-            'type': 'Vídeo',
-            'file_id': message.video.file_id
-        }
-    elif message.document:
-        media_info = {
-            'type': 'Documento',
-            'file_id': message.document.file_id
-        }
-    elif message.animation:
-        media_info = {
-            'type': 'GIF/Animação',
-            'file_id': message.animation.file_id
-        }
+    texto_etapa7 = """🔥Meu bem, olhá o que você tá perdendo...
+
+Quando você quiser, pode marcar uma <b>chamada de vídeo comigo</b>, onde faço <b>tudinho que você mandar até você g0.zar</b>, basta vir pro meu <b>VIP</b>.
+Só precisa se mostrar pra mim se você quiser, ta bom?
+
+E você vai ter tudo isso aqui que já falei também também:
+💎 Vídeos e fotos do jeitinho que você gosta...
+💎 Videos exclusivo pra você, te fazendo go.zar só eu e você
+💎 Meu contato pessoal
+💎 Sempre posto coisa nova
+💎 Chamada de vídeo só nós 2
+💎 E muito mais meu bem...
+
+<b>Vem ver os conteúdinhos e vamos marcar uma chamada de video</b>, só eu e você. Se quiser pode ser agora ou mais tarde, to disponível...
+
+Posso te fazer g0.zar só eu e vc? 🥵⬇️"""
     
-    if media_info:
-        # Armazena no contexto do usuário
-        context.user_data['last_media_id'] = media_info
-        
-        # Confirmação visual
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=f"✅ {media_info['type']} recebido!\n\n"
-                 f"Use /file_id para obter o ID do arquivo."
-        )
-        
-        logger.info(f"📎 Mídia capturada - Tipo: {media_info['type']}, ID: {media_info['file_id'][:20]}...")
+    keyboard = [[InlineKeyboardButton("IR PRO VIP🥵🔥", callback_data='trigger_etapa4')]]
+    
+    await context.bot.send_message(chat_id=chat_id, text=texto_etapa7, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    
+    # Agenda Etapa 8 para as 21:00 do dia seguinte (2 dias após início)
+    await schedule_etapa8_for_next_day_21h(context, chat_id)
+    #================= FECHAMENTO ======================
+
+# ------------------------- ETAPA 8: REMARKETING FINAL COM PROMOÇÃO R$19,90 -------------------------
+async def job_etapa8_remarketing(context: ContextTypes.DEFAULT_TYPE):
+    #======== REMARKETING FINAL COM PROMOÇÃO ESPECIAL =============
+    chat_id = context.job.data['chat_id']
+    logger.info(f"⏰ ETAPA 8: Remarketing final com promoção R$19,90 para {chat_id}.")
+    
+    # Envia vídeo da Etapa 8 com file_id específico
+    try:
+        await context.bot.send_video(chat_id=chat_id, video="BAACAgEAAxkBAAIXaGiqMLwx1GZZBbyyFlBQNX55InhJAAKxCAACSLxQRRCIFO22y5cvNgQ")
+        logger.info(f"✅ Vídeo Etapa 8 enviado para {chat_id}")
+    except Exception as e:
+        logger.error(f"❌ Erro ao enviar vídeo Etapa 8 para {chat_id}: {e}")
+    
+    # Envia áudio audio_etapa8.ogg usando file_id
+    try:
+        # File_id do áudio da etapa 8
+        await context.bot.send_voice(chat_id=chat_id, voice="CQACAgEAAxkBAAIXYmiqMHLLpqTlPSwEfQABzCjuOcOkPAACrggAAki8UEXd1YTe11IBbjYE")
+        logger.info(f"✅ Áudio Etapa 8 enviado para {chat_id}")
+    except Exception as e:
+        logger.error(f"❌ Erro ao enviar áudio Etapa 8 para {chat_id}: {e}")
+    
+    texto_etapa8 = """Como te falei, é <b>sua primeira e única chance de vir pro VIP com promoção QUASE DE GRAÇA</b> (Eu não fico oferecendo promoção)...
+
+Meu vip de 1 ano, onde você tem tudinho! Era R$67,00, <b>mas hoje (AGORA!) vai ser só R$19,90...</b>
+
+Vem meu bem, ter tudo que já te falei:
+💎 Vídeos e fotos do jeitinho que você gosta...
+💎 Videos exclusivo pra você, te fazendo go.zar só eu e você
+💎 Meu contato pessoal
+💎 Sempre posto coisa nova
+💎 Chamada de vídeo só nós 2
+💎 E muito mais meu bem...
+
+<b>🔥Primeira e última chance de vir pro VIP com desconto! (PROMOÇÃO SÓ ATÉ AMANHÃ CEDO EM)</b>
+
+Vem me ver daquele jeitinho e go.zar gostoso pra mim💦🥵⬇️"""
+    
+    # Botão especial com promoção R$19,90
+    keyboard = [[InlineKeyboardButton("SER VIP POR 1 ANO (19,90)🥵🔥", callback_data="plano:promo_1990")]]
+    
+    await context.bot.send_message(chat_id=chat_id, text=texto_etapa8, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
     #================= FECHAMENTO ======================
 
 # ------------------------- FUNÇÕES DE AGENDAMENTO PARA 21:00 BRASIL -------------------------
 async def schedule_etapa7_for_next_day_21h(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
     """Agenda Etapa 7 para as 21:00 (hora do Brasil) do dia seguinte"""
-    import pytz
+    try:
+        import pytz
+    except ImportError:
+        logger.warning("⚠️ pytz não instalado. Usando UTC como fallback")
+        pytz = None
     from datetime import datetime, timedelta
     
-    # Timezone do Brasil (UTC-3)
-    brazil_tz = pytz.timezone('America/Sao_Paulo')
-    
-    # Data e hora atual no Brasil
-    now_brazil = datetime.now(brazil_tz)
-    
-    # Data de amanhã às 21:00
-    tomorrow_21h = (now_brazil + timedelta(days=1)).replace(hour=21, minute=0, second=0, microsecond=0)
-    
-    # Converte para UTC para o job_queue
-    tomorrow_21h_utc = tomorrow_21h.astimezone(pytz.UTC).replace(tzinfo=None)
+    if pytz:
+        # Timezone do Brasil (UTC-3)
+        brazil_tz = pytz.timezone('America/Sao_Paulo')
+        
+        # Data e hora atual no Brasil
+        now_brazil = datetime.now(brazil_tz)
+        
+        # Data de amanhã às 21:00
+        tomorrow_21h = (now_brazil + timedelta(days=1)).replace(hour=21, minute=0, second=0, microsecond=0)
+        
+        # Converte para UTC para o job_queue
+        tomorrow_21h_utc = tomorrow_21h.astimezone(pytz.UTC).replace(tzinfo=None)
+    else:
+        # Fallback sem pytz - usa UTC-3 manualmente
+        now_utc = datetime.utcnow()
+        # Assume UTC-3 para Brasil
+        now_brazil = now_utc - timedelta(hours=3)
+        tomorrow_21h_brazil = (now_brazil + timedelta(days=1)).replace(hour=21, minute=0, second=0, microsecond=0)
+        # Converte de volta para UTC
+        tomorrow_21h_utc = tomorrow_21h_brazil + timedelta(hours=3)
     
     # Calcula segundos até o momento agendado
     now_utc = datetime.utcnow()
@@ -1411,24 +1084,40 @@ async def schedule_etapa7_for_next_day_21h(context: ContextTypes.DEFAULT_TYPE, c
         context.job_queue.run_once(job_etapa7_remarketing, seconds_until, 
                                  chat_id=chat_id, name=f"job_etapa7_{chat_id}", 
                                  data={'chat_id': chat_id})
-        logger.info(f"⏰ Etapa 7 agendada para {tomorrow_21h.strftime('%d/%m/%Y %H:%M')} (Brasil) - {seconds_until:.0f}s")
+        if pytz:
+            logger.info(f"⏰ Etapa 7 agendada para {tomorrow_21h.strftime('%d/%m/%Y %H:%M')} (Brasil) - {seconds_until:.0f}s")
+        else:
+            logger.info(f"⏰ Etapa 7 agendada para {tomorrow_21h_brazil.strftime('%d/%m/%Y %H:%M')} (Brasil) - {seconds_until:.0f}s")
 
 async def schedule_etapa8_for_next_day_21h(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
     """Agenda Etapa 8 para as 21:00 (hora do Brasil) do dia seguinte"""
-    import pytz
+    try:
+        import pytz
+    except ImportError:
+        logger.warning("⚠️ pytz não instalado. Usando UTC como fallback")
+        pytz = None
     from datetime import datetime, timedelta
     
-    # Timezone do Brasil (UTC-3)
-    brazil_tz = pytz.timezone('America/Sao_Paulo')
-    
-    # Data e hora atual no Brasil
-    now_brazil = datetime.now(brazil_tz)
-    
-    # Data de amanhã às 21:00
-    tomorrow_21h = (now_brazil + timedelta(days=1)).replace(hour=21, minute=0, second=0, microsecond=0)
-    
-    # Converte para UTC para o job_queue
-    tomorrow_21h_utc = tomorrow_21h.astimezone(pytz.UTC).replace(tzinfo=None)
+    if pytz:
+        # Timezone do Brasil (UTC-3)
+        brazil_tz = pytz.timezone('America/Sao_Paulo')
+        
+        # Data e hora atual no Brasil
+        now_brazil = datetime.now(brazil_tz)
+        
+        # Data de amanhã às 21:00
+        tomorrow_21h = (now_brazil + timedelta(days=1)).replace(hour=21, minute=0, second=0, microsecond=0)
+        
+        # Converte para UTC para o job_queue
+        tomorrow_21h_utc = tomorrow_21h.astimezone(pytz.UTC).replace(tzinfo=None)
+    else:
+        # Fallback sem pytz - usa UTC-3 manualmente
+        now_utc = datetime.utcnow()
+        # Assume UTC-3 para Brasil
+        now_brazil = now_utc - timedelta(hours=3)
+        tomorrow_21h_brazil = (now_brazil + timedelta(days=1)).replace(hour=21, minute=0, second=0, microsecond=0)
+        # Converte de volta para UTC
+        tomorrow_21h_utc = tomorrow_21h_brazil + timedelta(hours=3)
     
     # Calcula segundos até o momento agendado
     now_utc = datetime.utcnow()
@@ -1438,7 +1127,140 @@ async def schedule_etapa8_for_next_day_21h(context: ContextTypes.DEFAULT_TYPE, c
         context.job_queue.run_once(job_etapa8_remarketing, seconds_until, 
                                  chat_id=chat_id, name=f"job_etapa8_{chat_id}", 
                                  data={'chat_id': chat_id})
-        logger.info(f"⏰ Etapa 8 agendada para {tomorrow_21h.strftime('%d/%m/%Y %H:%M')} (Brasil) - {seconds_until:.0f}s")
+        if pytz:
+            logger.info(f"⏰ Etapa 8 agendada para {tomorrow_21h.strftime('%d/%m/%Y %H:%M')} (Brasil) - {seconds_until:.0f}s")
+        else:
+            logger.info(f"⏰ Etapa 8 agendada para {tomorrow_21h_brazil.strftime('%d/%m/%Y %H:%M')} (Brasil) - {seconds_until:.0f}s")
+
+# ------------------------- FUNCIONALIDADE FILE_ID PARA TODOS -------------------------
+async def handle_get_file_id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /get_file_id para obter file_id da última mídia"""
+    chat_id = update.effective_chat.id
+    
+    # Verifica se tem mídia armazenada para este chat
+    if 'last_media' not in context.chat_data:
+        await update.message.reply_text("❌ Nenhuma mídia foi enviada ainda. Envie uma foto, vídeo ou áudio primeiro!")
+        return
+    
+    media_info = context.chat_data['last_media']
+    
+    # Monta mensagem com file_id
+    response_text = f"📎 **FILE_ID CAPTURADO**\n\n"
+    response_text += f"🎬 **Tipo:** {media_info['type']}\n"
+    response_text += f"🆔 **File ID:** `{media_info['file_id']}`\n\n"
+    
+    # Adiciona informações específicas do tipo
+    for key, value in media_info.items():
+        if key not in ['type', 'file_id']:
+            response_text += f"📋 **{key.title()}:** {value}\n"
+    
+    response_text += f"\n💡 **Como usar:**\n"
+    response_text += f"```python\n"
+    if media_info['type'] == 'photo':
+        response_text += f"await context.bot.send_photo(chat_id=chat_id, photo=\"{media_info['file_id']}\")\n"
+    elif media_info['type'] == 'video':
+        response_text += f"await context.bot.send_video(chat_id=chat_id, video=\"{media_info['file_id']}\")\n"
+    elif media_info['type'] == 'voice':
+        response_text += f"await context.bot.send_voice(chat_id=chat_id, voice=\"{media_info['file_id']}\")\n"
+    elif media_info['type'] == 'audio':
+        response_text += f"await context.bot.send_audio(chat_id=chat_id, audio=\"{media_info['file_id']}\")\n"
+    elif media_info['type'] == 'document':
+        response_text += f"await context.bot.send_document(chat_id=chat_id, document=\"{media_info['file_id']}\")\n"
+    elif media_info['type'] == 'sticker':
+        response_text += f"await context.bot.send_sticker(chat_id=chat_id, sticker=\"{media_info['file_id']}\")\n"
+    elif media_info['type'] == 'gif':
+        response_text += f"await context.bot.send_animation(chat_id=chat_id, animation=\"{media_info['file_id']}\")\n"
+    response_text += f"```"
+    
+    await update.message.reply_text(response_text, parse_mode='Markdown')
+    logger.info(f"📎 File_id enviado para usuário {update.effective_user.id}")
+
+async def handle_admin_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Captura file_id de mídias enviadas por qualquer usuário"""
+    try:
+        user_id = update.effective_user.id
+        logger.info(f"📸 Mídia recebida de usuário {user_id}")
+        
+        message = update.message
+        if not message:
+            logger.warning("⚠️ Mensagem vazia ao tentar capturar mídia")
+            return
+        
+        media_info = None
+        
+        # Detecta tipo de mídia e captura file_id
+        if message.photo:
+            # Para fotos, pega a maior resolução
+            largest_photo = max(message.photo, key=lambda p: p.width * p.height)
+            media_info = {
+                'type': 'photo',
+                'file_id': largest_photo.file_id,
+                'width': largest_photo.width,
+                'height': largest_photo.height
+            }
+        elif message.video:
+            media_info = {
+                'type': 'video',
+                'file_id': message.video.file_id,
+                'duration': message.video.duration,
+                'width': message.video.width,
+                'height': message.video.height
+            }
+        elif message.voice:
+            media_info = {
+                'type': 'voice',
+                'file_id': message.voice.file_id,
+                'duration': message.voice.duration
+            }
+        elif message.audio:
+            media_info = {
+                'type': 'audio',
+                'file_id': message.audio.file_id,
+                'duration': message.audio.duration,
+                'title': message.audio.title or 'Sem título'
+            }
+        elif message.document:
+            media_info = {
+                'type': 'document',
+                'file_id': message.document.file_id,
+                'file_name': message.document.file_name or 'Sem nome',
+                'mime_type': message.document.mime_type
+            }
+        elif message.sticker:
+            media_info = {
+                'type': 'sticker',
+                'file_id': message.sticker.file_id,
+                'emoji': message.sticker.emoji
+            }
+        elif message.animation:
+            media_info = {
+                'type': 'gif',
+                'file_id': message.animation.file_id,
+                'width': message.animation.width,
+                'height': message.animation.height
+            }
+        
+        if media_info:
+            # Salva a mídia no chat_data para uso posterior com /get_file_id
+            context.chat_data['last_media'] = media_info
+            logger.info(f"📎 Mídia capturada e armazenada - Tipo: {media_info['type']}, ID: {media_info['file_id'][:20]}...")
+            
+            # Envia emoji conforme o tipo de mídia detectada
+            emoji_map = {
+                'photo': '📷',
+                'video': '🎥',
+                'voice': '🎤',
+                'audio': '🎵',
+                'document': '📄',
+                'sticker': '🎭',
+                'gif': '🎬'
+            }
+            
+            emoji = emoji_map.get(media_info['type'], '📎')
+            await message.reply_text(f"{emoji} Mídia recebida! Use /get_file_id para obter o file_id.")
+    except Exception as e:
+        logger.error(f"❌ Erro ao processar mídia: {e}")
+    #================= FECHAMENTO ======================
 
 # ==============================================================================
 # 4. FUNÇÃO PRINCIPAL E EXECUÇÃO DO BOT
@@ -1510,23 +1332,24 @@ async def main():
         
         # Registra os handlers na ordem correta
         application.add_handler(CommandHandler("start", start_command))
-        
-        # Handlers para teste local (REMOVER EM PRODUÇÃO)
-        if os.path.isfile(env_local_path):
-            from telegram.ext import MessageHandler, filters
-            application.add_handler(CommandHandler("file_id", file_id_command))
-            application.add_handler(MessageHandler(
-                filters.PHOTO | filters.VIDEO | filters.Document.ALL | filters.ANIMATION,
-                handle_media
-            ))
-            logger.info("🧪 Handlers de TESTE LOCAL registrados (/file_id)")
-        
+        application.add_handler(CommandHandler("get_file_id", handle_get_file_id_command))  # Novo comando para obter file_id
         application.add_handler(ChatJoinRequestHandler(handle_join_request))
         application.add_handler(CallbackQueryHandler(callback_trigger_etapa3, pattern='^trigger_etapa3$'))
         application.add_handler(CallbackQueryHandler(callback_trigger_etapa4, pattern='^trigger_etapa4$'))
         application.add_handler(CallbackQueryHandler(callback_processar_plano, pattern='^plano:'))
         application.add_handler(CallbackQueryHandler(callback_ja_paguei, pattern='^ja_paguei:'))
         application.add_handler(CallbackQueryHandler(callback_escolher_outro_plano, pattern='^escolher_outro_plano$'))
+        
+        # Handlers de mídia para captura de file_id (qualquer usuário)
+        from telegram.ext import MessageHandler, filters
+        application.add_handler(MessageHandler(filters.PHOTO, handle_admin_media))
+        application.add_handler(MessageHandler(filters.VIDEO, handle_admin_media))
+        application.add_handler(MessageHandler(filters.VOICE, handle_admin_media))
+        application.add_handler(MessageHandler(filters.AUDIO, handle_admin_media))
+        application.add_handler(MessageHandler(filters.Document.ALL, handle_admin_media))
+        application.add_handler(MessageHandler(filters.ANIMATION, handle_admin_media))
+        application.add_handler(MessageHandler(filters.Sticker.ALL, handle_admin_media))
+        
         logger.info("✅ Handlers registrados com sucesso")
     
         # Inicialização mais robusta
@@ -1547,7 +1370,11 @@ async def main():
                 if application.updater:
                     await application.updater.start_polling(
                         allowed_updates=['message', 'callback_query', 'chat_join_request'],
-                        drop_pending_updates=True
+                        drop_pending_updates=True,
+                        read_timeout=30,
+                        write_timeout=30,
+                        connect_timeout=30,
+                        pool_timeout=30
                     )
                     logger.info("✅ Polling iniciado com sucesso!")
                     break  # Sucesso, sai do loop
