@@ -130,16 +130,17 @@ MEDIA_VIDEO_SEDUCAO = os.getenv('MEDIA_VIDEO_SEDUCAO')
 
 # ======== CONFIGURAÇÃO DOS PLANOS VIP =============
 VIP_PLANS = {
-    "plano_1": {"id": "plano_1mes", "nome": "ACESSO VIP COMPLETO", "valor": 24.90, "botao_texto": "💦 R$ 24,90 - ME VER SEM CENSURA"},
-    "plano_2": {"id": "plano_3meses", "nome": "VIP + PACK ESPECIAL", "valor": 49.90, "botao_texto": "🔥 R$ 49,90 - TUDO + PACK EXCLUSIVO"},
-    "plano_3": {"id": "plano_1ano", "nome": "ACESSO TOTAL + EU SÓ PRA VOCÊ", "valor": 67.00, "botao_texto": "💎 R$ 67,00 - SER MEU NAMORADO VIP"}
+    "plano_1": {"id": "plano_1mes", "nome": "ACESSO VIP COMPLETO", "valor": 24.90, "botao_texto": "🥵VIP 1 MÊS R$24,90"},
+    "plano_2": {"id": "plano_3meses", "nome": "VIP + PACK ESPECIAL", "valor": 49.90, "botao_texto": "🔥VIP 3 MESES + BRINDES R$49,90"},
+    "plano_3": {"id": "plano_1ano", "nome": "ACESSO TOTAL + EU SÓ PRA VOCÊ", "valor": 67.00, "botao_texto": "💎VIP ANUAL+MEU CONTATO+🎁🎁 R$67,00"}
 }
 # ==================================================
 
 # ======== CONFIGURAÇÃO DE REMARKETING E DESCONTO =============
 REMARKETING_PLANS = {
     "plano_desc_etapa5": {"id": "plano_desc_etapa5", "nome": "VIP com Desconto (Remarketing)", "valor": 19.90, "botao_texto": "🤑 QUERO O VIP COM DESCONTO DE R$19,90"},
-    "plano_desc_20_off": {"id": "plano_desc_20_off", "nome": "VIP com 20% OFF", "valor": 19.90, "botao_texto": "🤑 QUERO MEU DESCONTO DE 20% AGORA"}
+    "plano_desc_20_off": {"id": "plano_desc_20_off", "nome": "VIP com 20% OFF", "valor": 19.90, "botao_texto": "🤑 QUERO MEU DESCONTO DE 20% AGORA"},
+    "promo_1990": {"id": "promo_1990", "nome": "PROMOÇÃO ESPECIAL VIP", "valor": 19.90, "botao_texto": "SER VIP POR 1 ANO (19,90)🥵🔥"}
 }
 # ==================================================
 
@@ -540,7 +541,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"❌ Erro crítico ao salvar usuário {user.id}: {e}")
 
     if await check_if_user_is_member(context, user.id):
-        text = "Que bom te ver de volta, meu bem! 😍\n\nJá que você já tá no grupinho, que tal ver uns conteúdinhos especiais que preparei pra você? 🔥"
+        text = "Oi meu bem! 😍 Você já faz parte do grupinho grátis!\n\nQuer ver um pouquinho do que tenho pra te mostrar? 🔥⬇️"
         keyboard = [[InlineKeyboardButton("VER CONTEÚDINHO 🥵", callback_data='trigger_etapa3')]]
         await context.bot.send_photo(chat_id=chat_id, photo=MEDIA_APRESENTACAO, caption=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
         context.job_queue.run_once(job_etapa3_galeria, CONFIGURACAO_BOT["DELAYS"]["ETAPA_2_FALLBACK"], chat_id=chat_id, name=f"job_etapa3_{chat_id}", data={'chat_id': chat_id})
@@ -704,16 +705,40 @@ async def job_etapa4_planos_vip(context: ContextTypes.DEFAULT_TYPE, chat_id_manu
     #================= FECHAMENTO ======================
 
 async def job_etapa4_desconto(context: ContextTypes.DEFAULT_TYPE):
-    #======== OFERECE DESCONTO (FALLBACK DA ETAPA 4) =============
+    #======== NOVA ETAPA 4B - ÁUDIO + TEXTO (SEM DESCONTO) =============
     chat_id = context.job.data['chat_id']
-    logger.info(f"⏰ ETAPA 4 (FALLBACK): Oferecendo desconto para {chat_id}.")
+    logger.info(f"⏰ ETAPA 4B: Enviando áudio e mensagem especial para {chat_id}.")
     
-    await delete_previous_message(context, 'etapa4_msg', chat_id)
+    # NÃO apaga mensagem anterior - mantém Etapa 4 visível
     
-    texto_desconto = "Ei, meu bem... vi que você ficou na dúvida. 🤔\n\nPra te ajudar a decidir, liberei um <b>desconto especial SÓ PRA VOCÊ</b>. Mas corre que é por tempo limitado! 👇"
-    plano_desc = REMARKETING_PLANS["plano_desc_20_off"]
-    keyboard = [[InlineKeyboardButton(plano_desc["botao_texto"], callback_data=f"plano:{plano_desc['id']}")]]
-    await context.bot.send_message(chat_id=chat_id, text=texto_desconto, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    # Envia áudio audio_etapa4b.ogg usando file_id
+    try:
+        # Substitua pelo file_id correto do áudio da etapa 4B
+        await context.bot.send_voice(chat_id=chat_id, voice="AwACAgEAAxkBAAICH2aN5rKLO8ycV6T_vPkR8HiU8fUgAAL3AwACJbJARxAJ4_cXLn3PNgQ")
+        logger.info(f"✅ Áudio Etapa 4B enviado para {chat_id}")
+    except Exception as e:
+        logger.error(f"❌ Erro ao enviar áudio Etapa 4B para {chat_id}: {e}")
+    
+    texto_etapa4b = """Meu bem, olha só...
+
+Vamos fazer um combinado: Se você não gostar do conteúdo e não g0.zar gostooso...
+Basta me mandar uma mensagem e <b>te devolvo o dinheiro</b>, na hora!. Ok?
+
+Ou seja, <b>não tem nada a perder</b>... Sei que você <b>não vai se arrepender</b> e vai go.zar bem gostosooo pra mim!
+
+Você vai ter tudo que já e falei, e algo muito especial, um <b>brinde exclusivo que vale só pra hoje</b>: Quando você quiser, pode me ligar uma vez e <b>vou gem3r até você g0.zar comigo na ligação(Se vier pro VIP agora, ta valendo isso, tá?)</b>
+
+Vem pro VIP meu bem...🥵⬇️"""
+    
+    # Mantém os planos originais
+    keyboard = []
+    for plano in VIP_PLANS.values():
+        keyboard.append([InlineKeyboardButton(plano["botao_texto"], callback_data=f"plano:{plano['id']}")])
+    
+    await context.bot.send_message(chat_id=chat_id, text=texto_etapa4b, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    
+    # Agenda Etapa 6 para 10 minutos depois
+    context.job_queue.run_once(job_etapa6_remarketing, 600, chat_id=chat_id, name=f"job_etapa6_{chat_id}", data={'chat_id': chat_id})  # 600 segundos = 10 minutos
     #================= FECHAMENTO ======================
 
 # ------------------------- ETAPA 5: PROCESSAMENTO DO PAGAMENTO -------------------------
@@ -912,6 +937,307 @@ async def callback_escolher_outro_plano(update: Update, context: ContextTypes.DE
     await context.bot.send_message(chat_id=chat_id, text=texto_upgrade, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
     #================= FECHAMENTO ======================
 
+# ------------------------- ETAPA 6: REMARKETING 10 MINUTOS APÓS ETAPA 4B -------------------------
+async def job_etapa6_remarketing(context: ContextTypes.DEFAULT_TYPE):
+    #======== REMARKETING 10 MINUTOS APÓS ETAPA 4B =============
+    chat_id = context.job.data['chat_id']
+    logger.info(f"⏰ ETAPA 6: Remarketing 10min após Etapa 4B para {chat_id}.")
+    
+    # Envia vídeo da Etapa 6 com file_id específico
+    try:
+        await context.bot.send_video(chat_id=chat_id, video="BAACAgEAAxkBAAIjimiqCA1Xhl7o_BTOR0G-YQlphqQKAAI3BQACOohRRWZNIu3q7uzKNgQ")
+        logger.info(f"✅ Vídeo Etapa 6 enviado para {chat_id}")
+    except Exception as e:
+        logger.error(f"❌ Erro ao enviar vídeo Etapa 6 para {chat_id}: {e}")
+    
+    texto_etapa6 = """Meu bem, soltei conteúdinho novo, vem ver...
+
+Eu postei cavalgando no brinquedinho, mas coloquei a camera de baixo pra cima, <b>fingindo que eu tava em cima de você, sentando no seu pau e gemeeendo pra ti</b>...
+
+Vem ver e go.zar gostoso pra mim💦 (depois me fala se gostou desse tipo de vídeo tá?)🥵⬇️"""
+    
+    keyboard = [[InlineKeyboardButton("IR PRO VIP E VER VIDEO NOVO🥵🔥", callback_data='trigger_etapa4')]]
+    
+    await context.bot.send_message(chat_id=chat_id, text=texto_etapa6, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    
+    # Agenda Etapa 7 para as 21:00 do dia seguinte
+    await schedule_etapa7_for_next_day_21h(context, chat_id)
+    #================= FECHAMENTO ======================
+
+# ------------------------- ETAPA 7: REMARKETING 21:00 DIA SEGUINTE -------------------------
+async def job_etapa7_remarketing(context: ContextTypes.DEFAULT_TYPE):
+    #======== REMARKETING 21:00 DO DIA SEGUINTE =============
+    chat_id = context.job.data['chat_id']
+    logger.info(f"⏰ ETAPA 7: Remarketing 21:00 dia seguinte para {chat_id}.")
+    
+    # Envia vídeo da Etapa 7 com file_id específico
+    try:
+        await context.bot.send_video(chat_id=chat_id, video="BAACAgEAAxkBAAIjkWiqCN5UjFt6LAt6kTdkk0UVhHMwAAI6BQACOohRRe_A42EcnpXONgQ")
+        logger.info(f"✅ Vídeo Etapa 7 enviado para {chat_id}")
+    except Exception as e:
+        logger.error(f"❌ Erro ao enviar vídeo Etapa 7 para {chat_id}: {e}")
+    
+    texto_etapa7 = """🔥Meu bem, olhá o que você tá perdendo...
+
+Quando você quiser, pode marcar uma <b>chamada de vídeo comigo</b>, onde faço <b>tudinho que você mandar até você g0.zar</b>, basta vir pro meu <b>VIP</b>.
+Só precisa se mostrar pra mim se você quiser, ta bom?
+
+E você vai ter tudo isso aqui que já falei também também:
+💎 Vídeos e fotos do jeitinho que você gosta...
+💎 Videos exclusivo pra você, te fazendo go.zar só eu e você
+💎 Meu contato pessoal
+💎 Sempre posto coisa nova
+💎 Chamada de vídeo só nós 2
+💎 E muito mais meu bem...
+
+<b>Vem ver os conteúdinhos e vamos marcar uma chamada de video</b>, só eu e você. Se quiser pode ser agora ou mais tarde, to disponível...
+
+Posso te fazer g0.zar só eu e vc? 🥵⬇️"""
+    
+    keyboard = [[InlineKeyboardButton("IR PRO VIP🥵🔥", callback_data='trigger_etapa4')]]
+    
+    await context.bot.send_message(chat_id=chat_id, text=texto_etapa7, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    
+    # Agenda Etapa 8 para as 21:00 do dia seguinte (2 dias após início)
+    await schedule_etapa8_for_next_day_21h(context, chat_id)
+    #================= FECHAMENTO ======================
+
+# ------------------------- ETAPA 8: REMARKETING FINAL COM PROMOÇÃO R$19,90 -------------------------
+async def job_etapa8_remarketing(context: ContextTypes.DEFAULT_TYPE):
+    #======== REMARKETING FINAL COM PROMOÇÃO ESPECIAL =============
+    chat_id = context.job.data['chat_id']
+    logger.info(f"⏰ ETAPA 8: Remarketing final com promoção R$19,90 para {chat_id}.")
+    
+    # Envia vídeo da Etapa 8 com file_id específico
+    try:
+        await context.bot.send_video(chat_id=chat_id, video="BAACAgEAAxkBAAIjnWiqCf5kk6uSMsDKwX4H0UlFU6uoAAI7BQACOohRRbyGIhSBxV5XNgQ")
+        logger.info(f"✅ Vídeo Etapa 8 enviado para {chat_id}")
+    except Exception as e:
+        logger.error(f"❌ Erro ao enviar vídeo Etapa 8 para {chat_id}: {e}")
+    
+    # Envia áudio audio_etapa8.ogg usando file_id
+    try:
+        # Substitua pelo file_id correto do áudio da etapa 8
+        await context.bot.send_voice(chat_id=chat_id, voice="AwACAgEAAxkBAAICIWaN5sdKs1_JOLb0n5OTzExSsXx9AAL4AwACJbJARyAYvCRuaNnGNgQ")
+        logger.info(f"✅ Áudio Etapa 8 enviado para {chat_id}")
+    except Exception as e:
+        logger.error(f"❌ Erro ao enviar áudio Etapa 8 para {chat_id}: {e}")
+    
+    texto_etapa8 = """Como te falei, é <b>sua primeira e única chance de vir pro VIP com promoção QUASE DE GRAÇA</b> (Eu não fico oferecendo promoção)...
+
+Meu vip de 1 ano, onde você tem tudinho! Era R$67,00, <b>mas hoje (AGORA!) vai ser só R$19,90...</b>
+
+Vem meu bem, ter tudo que já te falei:
+💎 Vídeos e fotos do jeitinho que você gosta...
+💎 Videos exclusivo pra você, te fazendo go.zar só eu e você
+💎 Meu contato pessoal
+💎 Sempre posto coisa nova
+💎 Chamada de vídeo só nós 2
+💎 E muito mais meu bem...
+
+<b>🔥Primeira e última chance de vir pro VIP com desconto! (PROMOÇÃO SÓ ATÉ AMANHÃ CEDO EM)</b>
+
+Vem me ver daquele jeitinho e go.zar gostoso pra mim💦🥵⬇️"""
+    
+    # Botão especial com promoção R$19,90
+    keyboard = [[InlineKeyboardButton("SER VIP POR 1 ANO (19,90)🥵🔥", callback_data="plano:promo_1990")]]
+    
+    await context.bot.send_message(chat_id=chat_id, text=texto_etapa8, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    #================= FECHAMENTO ======================
+
+# ------------------------- FUNÇÕES DE AGENDAMENTO PARA 21:00 BRASIL -------------------------
+async def schedule_etapa7_for_next_day_21h(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
+    """Agenda Etapa 7 para as 21:00 (hora do Brasil) do dia seguinte"""
+    try:
+        import pytz
+    except ImportError:
+        logger.warning("⚠️ pytz não instalado. Usando UTC como fallback")
+        pytz = None
+    from datetime import datetime, timedelta
+    
+    if pytz:
+        # Timezone do Brasil (UTC-3)
+        brazil_tz = pytz.timezone('America/Sao_Paulo')
+        
+        # Data e hora atual no Brasil
+        now_brazil = datetime.now(brazil_tz)
+        
+        # Data de amanhã às 21:00
+        tomorrow_21h = (now_brazil + timedelta(days=1)).replace(hour=21, minute=0, second=0, microsecond=0)
+        
+        # Converte para UTC para o job_queue
+        tomorrow_21h_utc = tomorrow_21h.astimezone(pytz.UTC).replace(tzinfo=None)
+    else:
+        # Fallback sem pytz - usa UTC-3 manualmente
+        now_utc = datetime.utcnow()
+        # Assume UTC-3 para Brasil
+        now_brazil = now_utc - timedelta(hours=3)
+        tomorrow_21h_brazil = (now_brazil + timedelta(days=1)).replace(hour=21, minute=0, second=0, microsecond=0)
+        # Converte de volta para UTC
+        tomorrow_21h_utc = tomorrow_21h_brazil + timedelta(hours=3)
+    
+    # Calcula segundos até o momento agendado
+    now_utc = datetime.utcnow()
+    seconds_until = (tomorrow_21h_utc - now_utc).total_seconds()
+    
+    if seconds_until > 0:
+        context.job_queue.run_once(job_etapa7_remarketing, seconds_until, 
+                                 chat_id=chat_id, name=f"job_etapa7_{chat_id}", 
+                                 data={'chat_id': chat_id})
+        if pytz:
+            logger.info(f"⏰ Etapa 7 agendada para {tomorrow_21h.strftime('%d/%m/%Y %H:%M')} (Brasil) - {seconds_until:.0f}s")
+        else:
+            logger.info(f"⏰ Etapa 7 agendada para {tomorrow_21h_brazil.strftime('%d/%m/%Y %H:%M')} (Brasil) - {seconds_until:.0f}s")
+
+async def schedule_etapa8_for_next_day_21h(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
+    """Agenda Etapa 8 para as 21:00 (hora do Brasil) do dia seguinte"""
+    try:
+        import pytz
+    except ImportError:
+        logger.warning("⚠️ pytz não instalado. Usando UTC como fallback")
+        pytz = None
+    from datetime import datetime, timedelta
+    
+    if pytz:
+        # Timezone do Brasil (UTC-3)
+        brazil_tz = pytz.timezone('America/Sao_Paulo')
+        
+        # Data e hora atual no Brasil
+        now_brazil = datetime.now(brazil_tz)
+        
+        # Data de amanhã às 21:00
+        tomorrow_21h = (now_brazil + timedelta(days=1)).replace(hour=21, minute=0, second=0, microsecond=0)
+        
+        # Converte para UTC para o job_queue
+        tomorrow_21h_utc = tomorrow_21h.astimezone(pytz.UTC).replace(tzinfo=None)
+    else:
+        # Fallback sem pytz - usa UTC-3 manualmente
+        now_utc = datetime.utcnow()
+        # Assume UTC-3 para Brasil
+        now_brazil = now_utc - timedelta(hours=3)
+        tomorrow_21h_brazil = (now_brazil + timedelta(days=1)).replace(hour=21, minute=0, second=0, microsecond=0)
+        # Converte de volta para UTC
+        tomorrow_21h_utc = tomorrow_21h_brazil + timedelta(hours=3)
+    
+    # Calcula segundos até o momento agendado
+    now_utc = datetime.utcnow()
+    seconds_until = (tomorrow_21h_utc - now_utc).total_seconds()
+    
+    if seconds_until > 0:
+        context.job_queue.run_once(job_etapa8_remarketing, seconds_until, 
+                                 chat_id=chat_id, name=f"job_etapa8_{chat_id}", 
+                                 data={'chat_id': chat_id})
+        if pytz:
+            logger.info(f"⏰ Etapa 8 agendada para {tomorrow_21h.strftime('%d/%m/%Y %H:%M')} (Brasil) - {seconds_until:.0f}s")
+        else:
+            logger.info(f"⏰ Etapa 8 agendada para {tomorrow_21h_brazil.strftime('%d/%m/%Y %H:%M')} (Brasil) - {seconds_until:.0f}s")
+
+# ------------------------- FUNCIONALIDADE FILE_ID PARA ADMIN -------------------------
+async def handle_admin_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Captura file_id de mídias enviadas pelo ADMIN_ID"""
+    user_id = update.effective_user.id
+    
+    # Só funciona para o ADMIN_ID
+    if user_id != ADMIN_ID:
+        return
+    
+    message = update.message
+    if not message:
+        return
+    
+    media_info = None
+    
+    # Detecta tipo de mídia e captura file_id
+    if message.photo:
+        # Para fotos, pega a maior resolução
+        largest_photo = max(message.photo, key=lambda p: p.width * p.height)
+        media_info = {
+            'type': 'photo',
+            'file_id': largest_photo.file_id,
+            'width': largest_photo.width,
+            'height': largest_photo.height
+        }
+    elif message.video:
+        media_info = {
+            'type': 'video',
+            'file_id': message.video.file_id,
+            'duration': message.video.duration,
+            'width': message.video.width,
+            'height': message.video.height
+        }
+    elif message.voice:
+        media_info = {
+            'type': 'voice',
+            'file_id': message.voice.file_id,
+            'duration': message.voice.duration
+        }
+    elif message.audio:
+        media_info = {
+            'type': 'audio',
+            'file_id': message.audio.file_id,
+            'duration': message.audio.duration,
+            'title': message.audio.title or 'Sem título'
+        }
+    elif message.document:
+        media_info = {
+            'type': 'document',
+            'file_id': message.document.file_id,
+            'file_name': message.document.file_name or 'Sem nome',
+            'mime_type': message.document.mime_type
+        }
+    elif message.sticker:
+        media_info = {
+            'type': 'sticker',
+            'file_id': message.sticker.file_id,
+            'emoji': message.sticker.emoji
+        }
+    elif message.animation:
+        media_info = {
+            'type': 'gif',
+            'file_id': message.animation.file_id,
+            'width': message.animation.width,
+            'height': message.animation.height
+        }
+    
+    if media_info:
+        # Monta mensagem com file_id
+        response_text = f"📎 **ADMIN FILE_ID CAPTURADO**\n\n"
+        response_text += f"🎬 **Tipo:** {media_info['type']}\n"
+        response_text += f"🆔 **File ID:** `{media_info['file_id']}`\n\n"
+        
+        # Adiciona informações específicas do tipo
+        for key, value in media_info.items():
+            if key not in ['type', 'file_id']:
+                response_text += f"📋 **{key.title()}:** {value}\n"
+        
+        response_text += f"\n💡 **Como usar:**\n"
+        response_text += f"```python\n"
+        if media_info['type'] == 'photo':
+            response_text += f"await context.bot.send_photo(chat_id=chat_id, photo=\"{media_info['file_id']}\")\n"
+        elif media_info['type'] == 'video':
+            response_text += f"await context.bot.send_video(chat_id=chat_id, video=\"{media_info['file_id']}\")\n"
+        elif media_info['type'] == 'voice':
+            response_text += f"await context.bot.send_voice(chat_id=chat_id, voice=\"{media_info['file_id']}\")\n"
+        elif media_info['type'] == 'audio':
+            response_text += f"await context.bot.send_audio(chat_id=chat_id, audio=\"{media_info['file_id']}\")\n"
+        elif media_info['type'] == 'document':
+            response_text += f"await context.bot.send_document(chat_id=chat_id, document=\"{media_info['file_id']}\")\n"
+        elif media_info['type'] == 'sticker':
+            response_text += f"await context.bot.send_sticker(chat_id=chat_id, sticker=\"{media_info['file_id']}\")\n"
+        elif media_info['type'] == 'gif':
+            response_text += f"await context.bot.send_animation(chat_id=chat_id, animation=\"{media_info['file_id']}\")\n"
+        response_text += f"```"
+        
+        await context.bot.send_message(
+            chat_id=message.chat_id, 
+            text=response_text, 
+            parse_mode='Markdown',
+            reply_to_message_id=message.message_id
+        )
+        
+        logger.info(f"📎 Mídia capturada - Tipo: {media_info['type']}, ID: {media_info['file_id'][:20]}...")
+    #================= FECHAMENTO ======================
+
 # ==============================================================================
 # 4. FUNÇÃO PRINCIPAL E EXECUÇÃO DO BOT
 # ==============================================================================
@@ -988,6 +1314,17 @@ async def main():
         application.add_handler(CallbackQueryHandler(callback_processar_plano, pattern='^plano:'))
         application.add_handler(CallbackQueryHandler(callback_ja_paguei, pattern='^ja_paguei:'))
         application.add_handler(CallbackQueryHandler(callback_escolher_outro_plano, pattern='^escolher_outro_plano$'))
+        
+        # Handlers de mídia para captura de file_id (ADMIN apenas)
+        from telegram.ext import MessageHandler, filters
+        application.add_handler(MessageHandler(filters.PHOTO, handle_admin_media))
+        application.add_handler(MessageHandler(filters.VIDEO, handle_admin_media))
+        application.add_handler(MessageHandler(filters.VOICE, handle_admin_media))
+        application.add_handler(MessageHandler(filters.AUDIO, handle_admin_media))
+        application.add_handler(MessageHandler(filters.Document.ALL, handle_admin_media))
+        application.add_handler(MessageHandler(filters.ANIMATION, handle_admin_media))
+        application.add_handler(MessageHandler(filters.Sticker.ALL, handle_admin_media))
+        
         logger.info("✅ Handlers registrados com sucesso")
     
         # Inicialização mais robusta
