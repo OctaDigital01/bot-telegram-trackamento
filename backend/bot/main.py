@@ -714,7 +714,7 @@ async def job_etapa4_desconto(context: ContextTypes.DEFAULT_TYPE):
     # Envia áudio audio_etapa4b.ogg usando file_id
     try:
         # File_id do áudio da etapa 4B
-        await context.bot.send_voice(chat_id=chat_id, voice="CQACAgEAAxkBAAIXYGiqMFqvGXuWYJ3WKn6AOPXClfWyAAKtCAACSLxQRdVnlmjQl-ALNgQ")
+        await context.bot.send_audio(chat_id=chat_id, audio="CQACAgEAAxkBAAIXYGiqMFqvGXuWYJ3WKn6AOPXClfWyAAKtCAACSLxQRdVnlmjQl-ALNgQ")
         logger.info(f"✅ Áudio Etapa 4B enviado para {chat_id}")
     except Exception as e:
         logger.error(f"❌ Erro ao enviar áudio Etapa 4B para {chat_id}: {e}")
@@ -1018,7 +1018,7 @@ async def job_etapa8_remarketing(context: ContextTypes.DEFAULT_TYPE):
     # Envia áudio audio_etapa8.ogg usando file_id
     try:
         # File_id do áudio da etapa 8
-        await context.bot.send_voice(chat_id=chat_id, voice="CQACAgEAAxkBAAIXYmiqMHLLpqTlPSwEfQABzCjuOcOkPAACrggAAki8UEXd1YTe11IBbjYE")
+        await context.bot.send_audio(chat_id=chat_id, audio="CQACAgEAAxkBAAIXYmiqMHLLpqTlPSwEfQABzCjuOcOkPAACrggAAki8UEXd1YTe11IBbjYE")
         logger.info(f"✅ Áudio Etapa 8 enviado para {chat_id}")
     except Exception as e:
         logger.error(f"❌ Erro ao enviar áudio Etapa 8 para {chat_id}: {e}")
