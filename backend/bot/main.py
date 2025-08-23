@@ -154,7 +154,7 @@ CONFIGURACAO_BOT = {
         "ETAPA_1_FALLBACK": 30,         # (30s) Se não clicar para entrar no grupo
         "ETAPA_2_FALLBACK": 60,         # (60s) Se não clicar para ver prévia
         "ETAPA_3_FALLBACK": 200,         # (3m) Se não clicar no "QUERO O VIP", envia remarketing
-        "ETAPA_4_FALLBACK": 300,         # (5m) Se não escolher plano, envia desconto
+        "ETAPA_4_FALLBACK": 120,         # (2m) Se não escolher plano, envia ota msg
         "APROVACAO_GRUPO_BG": 40,       # (40s) Tempo para aprovar a entrada no grupo em background
         "PIX_TIMEOUT": 3600,            # (60min) Tempo para expirar o PIX
     }
