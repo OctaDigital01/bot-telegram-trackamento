@@ -711,11 +711,18 @@ async def job_etapa4_desconto(context: ContextTypes.DEFAULT_TYPE):
     
     # NÃO apaga mensagem anterior - mantém Etapa 4 visível
     
-    # Envia áudio audio_etapa4b.ogg usando file_id
+    # Envia áudio audio_etapa4b.ogg da pasta backend/bot
     try:
-        # File_id do áudio da etapa 4B
-        await context.bot.send_audio(chat_id=chat_id, audio="CQACAgEAAxkBAAIXYGiqMFqvGXuWYJ3WKn6AOPXClfWyAAKtCAACSLxQRdVnlmjQl-ALNgQ")
-        logger.info(f"✅ Áudio Etapa 4B enviado para {chat_id}")
+        import os
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        audio_path = os.path.join(script_dir, 'backend', 'bot', 'audio_etapa4b.ogg')
+        
+        if os.path.exists(audio_path):
+            with open(audio_path, 'rb') as audio_file:
+                await context.bot.send_voice(chat_id=chat_id, voice=audio_file)
+            logger.info(f"✅ Áudio Etapa 4B enviado para {chat_id}")
+        else:
+            logger.warning(f"⚠️ Arquivo audio_etapa4b.ogg não encontrado em {audio_path}")
     except Exception as e:
         logger.error(f"❌ Erro ao enviar áudio Etapa 4B para {chat_id}: {e}")
     
@@ -1015,11 +1022,18 @@ async def job_etapa8_remarketing(context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"❌ Erro ao enviar vídeo Etapa 8 para {chat_id}: {e}")
     
-    # Envia áudio audio_etapa8.ogg usando file_id
+    # Envia áudio audio_etapa8.ogg da pasta backend/bot
     try:
-        # File_id do áudio da etapa 8
-        await context.bot.send_audio(chat_id=chat_id, audio="CQACAgEAAxkBAAIXYmiqMHLLpqTlPSwEfQABzCjuOcOkPAACrggAAki8UEXd1YTe11IBbjYE")
-        logger.info(f"✅ Áudio Etapa 8 enviado para {chat_id}")
+        import os
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        audio_path = os.path.join(script_dir, 'backend', 'bot', 'audio_etapa8.ogg')
+        
+        if os.path.exists(audio_path):
+            with open(audio_path, 'rb') as audio_file:
+                await context.bot.send_voice(chat_id=chat_id, voice=audio_file)
+            logger.info(f"✅ Áudio Etapa 8 enviado para {chat_id}")
+        else:
+            logger.warning(f"⚠️ Arquivo audio_etapa8.ogg não encontrado em {audio_path}")
     except Exception as e:
         logger.error(f"❌ Erro ao enviar áudio Etapa 8 para {chat_id}: {e}")
     
