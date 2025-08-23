@@ -154,7 +154,7 @@ CONFIGURACAO_BOT = {
         "ETAPA_1_FALLBACK": 30,         # (30s) Se não clicar para entrar no grupo
         "ETAPA_2_FALLBACK": 60,         # (60s) Se não clicar para ver prévia
         "ETAPA_3_FALLBACK": 200,         # (3m) Se não clicar no "QUERO O VIP", envia remarketing
-        "ETAPA_4_FALLBACK": 120,         # (2m) Se não escolher plano, envia ota msg
+        "ETAPA_4_FALLBACK": 300,         # (5m) Se não escolher plano, envia desconto
         "APROVACAO_GRUPO_BG": 40,       # (40s) Tempo para aprovar a entrada no grupo em background
         "PIX_TIMEOUT": 3600,            # (60min) Tempo para expirar o PIX
     }
@@ -711,18 +711,37 @@ async def job_etapa4_desconto(context: ContextTypes.DEFAULT_TYPE):
     
     # NÃO apaga mensagem anterior - mantém Etapa 4 visível
     
-    # Envia áudio audio_etapa4b.ogg da pasta backend/bot
+    # Envia áudio audio_etapa4b.ogg - tenta múltiplos caminhos
     try:
         import os
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        audio_path = os.path.join(script_dir, 'backend', 'bot', 'audio_etapa4b.ogg')
         
-        if os.path.exists(audio_path):
+        # Lista de possíveis caminhos onde o arquivo pode estar
+        possible_paths = [
+            os.path.join(script_dir, 'backend', 'bot', 'audio_etapa4b.ogg'),
+            os.path.join(script_dir, 'audio_etapa4b.ogg'),
+            os.path.join('/app', 'backend', 'bot', 'audio_etapa4b.ogg'),  # Railway path
+            os.path.join('/app', 'audio_etapa4b.ogg'),  # Railway root
+            'backend/bot/audio_etapa4b.ogg',  # Caminho relativo
+            'audio_etapa4b.ogg'  # Mesma pasta
+        ]
+        
+        audio_path = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                audio_path = path
+                logger.info(f"📁 Áudio encontrado em: {audio_path}")
+                break
+        
+        if audio_path:
             with open(audio_path, 'rb') as audio_file:
                 await context.bot.send_voice(chat_id=chat_id, voice=audio_file)
             logger.info(f"✅ Áudio Etapa 4B enviado para {chat_id}")
         else:
-            logger.warning(f"⚠️ Arquivo audio_etapa4b.ogg não encontrado em {audio_path}")
+            logger.warning(f"⚠️ Arquivo audio_etapa4b.ogg não encontrado. Tentados: {possible_paths}")
+            # Fallback: usa file_id se arquivo local não for encontrado
+            await context.bot.send_voice(chat_id=chat_id, voice="CQACAgEAAxkBAAIXYGiqMFqvGXuWYJ3WKn6AOPXClfWyAAKtCAACSLxQRdVnlmjQl-ALNgQ")
+            logger.info(f"✅ Áudio Etapa 4B enviado via file_id (fallback)")
     except Exception as e:
         logger.error(f"❌ Erro ao enviar áudio Etapa 4B para {chat_id}: {e}")
     
@@ -1022,18 +1041,37 @@ async def job_etapa8_remarketing(context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"❌ Erro ao enviar vídeo Etapa 8 para {chat_id}: {e}")
     
-    # Envia áudio audio_etapa8.ogg da pasta backend/bot
+    # Envia áudio audio_etapa8.ogg - tenta múltiplos caminhos
     try:
         import os
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        audio_path = os.path.join(script_dir, 'backend', 'bot', 'audio_etapa8.ogg')
         
-        if os.path.exists(audio_path):
+        # Lista de possíveis caminhos onde o arquivo pode estar
+        possible_paths = [
+            os.path.join(script_dir, 'backend', 'bot', 'audio_etapa8.ogg'),
+            os.path.join(script_dir, 'audio_etapa8.ogg'),
+            os.path.join('/app', 'backend', 'bot', 'audio_etapa8.ogg'),  # Railway path
+            os.path.join('/app', 'audio_etapa8.ogg'),  # Railway root
+            'backend/bot/audio_etapa8.ogg',  # Caminho relativo
+            'audio_etapa8.ogg'  # Mesma pasta
+        ]
+        
+        audio_path = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                audio_path = path
+                logger.info(f"📁 Áudio encontrado em: {audio_path}")
+                break
+        
+        if audio_path:
             with open(audio_path, 'rb') as audio_file:
                 await context.bot.send_voice(chat_id=chat_id, voice=audio_file)
             logger.info(f"✅ Áudio Etapa 8 enviado para {chat_id}")
         else:
-            logger.warning(f"⚠️ Arquivo audio_etapa8.ogg não encontrado em {audio_path}")
+            logger.warning(f"⚠️ Arquivo audio_etapa8.ogg não encontrado. Tentados: {possible_paths}")
+            # Fallback: usa file_id se arquivo local não for encontrado
+            await context.bot.send_voice(chat_id=chat_id, voice="CQACAgEAAxkBAAIXYmiqMHLLpqTlPSwEfQABzCjuOcOkPAACrggAAki8UEXd1YTe11IBbjYE")
+            logger.info(f"✅ Áudio Etapa 8 enviado via file_id (fallback)")
     except Exception as e:
         logger.error(f"❌ Erro ao enviar áudio Etapa 8 para {chat_id}: {e}")
     
