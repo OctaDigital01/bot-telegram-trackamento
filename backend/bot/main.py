@@ -154,7 +154,7 @@ CONFIGURACAO_BOT = {
     "DELAYS": {
         "ETAPA_1_FALLBACK": 30,         # (30s) Se não clicar para entrar no grupo
         "ETAPA_2_FALLBACK": 60,         # (60s) Se não clicar para ver prévia
-        "ETAPA_3_FALLBACK": 200,         # (3m) Se não clicar no "QUERO O VIP", envia remarketing
+        "ETAPA_3_FALLBACK": 300,         # (5m) Se não clicar no "QUERO O VIP", vai para o fallback da etapa 4
         "ETAPA_4_FALLBACK": 300,         # (5m) Se não escolher plano, envia desconto
         "APROVACAO_GRUPO_BG": 40,       # (40s) Tempo para aprovar a entrada no grupo em background
         "PIX_TIMEOUT": 3600,            # (60min) Tempo para expirar o PIX
@@ -745,19 +745,8 @@ async def job_etapa3_galeria(context: ContextTypes.DEFAULT_TYPE, chat_id_manual=
         context.bot_data['message_ids'] = {}
     context.bot_data['message_ids'][f'etapa3_msg_{chat_id}'] = msg.message_id
     
-    context.job_queue.run_once(job_etapa3_remarketing, CONFIGURACAO_BOT["DELAYS"]["ETAPA_3_FALLBACK"], chat_id=chat_id, name=f"job_etapa3_remarketing_{chat_id}", data={'chat_id': chat_id})
-    #================= FECHAMENTO ======================
-
-async def job_etapa3_remarketing(context: ContextTypes.DEFAULT_TYPE):
-    #======== ENVIA MENSAGEM DE REMARKETING (FALLBACK DA ETAPA 3) =============
-    chat_id = context.job.data['chat_id']
-    logger.info(f"⏰ ETAPA 3 (FALLBACK): Enviando remarketing breve para {chat_id}.")
-    
-    await delete_previous_message(context, 'etapa3_msg', chat_id)
-    
-    texto_remarketing = "Ei, amor... não some não. Tenho uma surpresinha pra você. Clica aqui pra gente continuar 🔥"
-    keyboard = [[InlineKeyboardButton("CONTINUAR CONVERSANDO 🔥", callback_data='trigger_etapa4')]]
-    await context.bot.send_message(chat_id=chat_id, text=texto_remarketing, reply_markup=InlineKeyboardMarkup(keyboard))
+    # MODIFICADO: Agenda o fallback da ETAPA 4 (job_etapa4_desconto) após 300 segundos
+    context.job_queue.run_once(job_etapa4_desconto, CONFIGURACAO_BOT["DELAYS"]["ETAPA_3_FALLBACK"], chat_id=chat_id, name=f"job_etapa4_desconto_{chat_id}", data={'chat_id': chat_id})
     #================= FECHAMENTO ======================
 
 # ------------------------- ETAPA 4: PLANOS VIP E DESCONTO -------------------------
@@ -769,11 +758,13 @@ async def callback_trigger_etapa4(update: Update, context: ContextTypes.DEFAULT_
     
     logger.info(f"👤 ETAPA 4: Usuário {chat_id} clicou para conhecer o VIP.")
     
-    await remove_job_if_exists(f"job_etapa3_remarketing_{chat_id}", context)
+    # MODIFICADO: Remove o job de fallback da etapa 4 que foi agendado na etapa 3
+    await remove_job_if_exists(f"job_etapa4_desconto_{chat_id}", context)
     await query.delete_message()
     
     await job_etapa4_planos_vip(context, chat_id_manual=chat_id)
     #================= FECHAMENTO ======================
+
     
 async def job_etapa4_planos_vip(context: ContextTypes.DEFAULT_TYPE, chat_id_manual=None):
     #======== MOSTRA OS PLANOS VIP =============
