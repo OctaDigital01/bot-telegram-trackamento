@@ -692,7 +692,7 @@
                     if (response.ok) {
                         log('✅ Tracking salvo no banco:', shortId);
                         // Usa o ID mapeado que tem os dados salvos
-                        const botUrl = `https://t.me/anacardoso25_bot?start=${shortId}`;
+                        const botUrl = `https://t.me/anacardoso2_bot?start=${shortId}`;
                         log('Bot URL com tracking mapeado:', botUrl);
                         
                         // Abre bot no Telegram
@@ -700,18 +700,18 @@
                     } else {
                         log('❌ Erro ao salvar tracking');
                         // Fallback: envia só o click_id
-                        const botUrl = `https://t.me/anacardoso25_bot?start=${trackingData.click_id || 'no_tracking'}`;
+                        const botUrl = `https://t.me/anacardoso2_bot?start=${trackingData.click_id || 'no_tracking'}`;
                         window.open(botUrl, '_blank');
                     }
                 } catch (error) {
                     log('❌ Erro de conexão:', error);
                     // Fallback: envia só o click_id
-                    const botUrl = `https://t.me/anacardoso25_bot?start=${trackingData.click_id || 'no_tracking'}`;
+                    const botUrl = `https://t.me/anacardoso2_bot?start=${trackingData.click_id || 'no_tracking'}`;
                     window.open(botUrl, '_blank');
                 }
             } else {
                 // Sem tracking data, abre bot sem parâmetros
-                const botUrl = `https://t.me/anacardoso25_bot?start=no_tracking`;
+                const botUrl = `https://t.me/anacardoso2_bot?start=no_tracking`;
                 window.open(botUrl, '_blank');
             }
             
