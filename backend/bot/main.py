@@ -132,9 +132,9 @@ MEDIA_ULTIMA_CHANCE = os.getenv('MEDIA_ULTIMA_CHANCE', 'BAACAgEAAxkBAAJRpGiwrUGW
 
 # ======== CONFIGURAÇÃO DOS PLANOS VIP =============
 VIP_PLANS = {
-    "plano_1": {"id": "plano_1mes", "nome": "VIP 7 DIAS", "valor": 24.90, "botao_texto": "🥵VIP 7 DIAS | <s>De R$64,90</s> <b>por R$24,90</b>"},
-    "plano_2": {"id": "plano_3meses", "nome": "VIP 3 MESES", "valor": 39.90, "botao_texto": "🔥VIP 3 MESES | <s>De R$99,90</s> <b>por R$39,90</b>"},
-    "plano_3": {"id": "plano_1ano", "nome": "VIP ANUAL", "valor": 57.00, "botao_texto": "💎VIP ANUAL | <s>De R$175,00</s> <b>por R$57,00</b>"}
+    "plano_1": {"id": "plano_1mes", "nome": "VIP 7 DIAS", "valor": 24.90, "botao_texto": "🥵VIP 7 DIAS | De R$64,90 por R$24,90"},
+    "plano_2": {"id": "plano_3meses", "nome": "VIP 3 MESES", "valor": 39.90, "botao_texto": "🔥VIP 3 MESES | De R$99,90 por R$39,90"},
+    "plano_3": {"id": "plano_1ano", "nome": "VIP ANUAL", "valor": 57.00, "botao_texto": "💎VIP ANUAL+🎁🔥 | De R$175,00 por R$57,00"}
 }
 # ==================================================
 
@@ -735,7 +735,7 @@ async def job_etapa3_galeria(context: ContextTypes.DEFAULT_TYPE, chat_id_manual=
     await context.bot.send_media_group(chat_id=chat_id, media=media_group)
     
     text_vip = "Gostou do que viu, meu bem 🤭?\n\nTenho muito mais no VIP pra você (TOTALMENTE SEM CENSURA).\n\nVem gozar porra quentinha pra mim🥵💦⬇️"
-    keyboard = [[InlineKeyboardButton("QUERO O VIP🔥", callback_data='trigger_etapa4')]]
+    keyboard = [[InlineKeyboardButton("CONHECER O VIP🔥", callback_data='trigger_etapa4')]]
     msg = await context.bot.send_message(chat_id=chat_id, text=text_vip, reply_markup=InlineKeyboardMarkup(keyboard))
     
     # Salva tanto no user_data quanto no bot_data para funcionar em ambos contextos
