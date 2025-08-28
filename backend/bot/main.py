@@ -126,13 +126,15 @@ MEDIA_VIDEO_QUENTE = os.getenv('MEDIA_VIDEO_QUENTE')
 MEDIA_PREVIA_SITE = os.getenv('MEDIA_PREVIA_SITE')
 MEDIA_PROVOCATIVA = os.getenv('MEDIA_PROVOCATIVA')
 MEDIA_VIDEO_SEDUCAO = os.getenv('MEDIA_VIDEO_SEDUCAO')
+MEDIA_VIDEO_PANCADA = os.getenv('MEDIA_VIDEO_PANCADA', 'BAACAgEAAxkBAAJRoGiwp-wjSX6k3a-g_V8apUviNBk8AAI9BgAC2vKJRT1qfkb3mjqYNgQ')
+MEDIA_ULTIMA_CHANCE = os.getenv('MEDIA_ULTIMA_CHANCE', 'BAACAgEAAxkBAAJRpGiwrUGWDWMH2Kw2qBOq933S8hfrAAI-BgAC2vKJRYq_1tGet948NgQ')
 # ====================================================
 
 # ======== CONFIGURAÇÃO DOS PLANOS VIP =============
 VIP_PLANS = {
-    "plano_1": {"id": "plano_1mes", "nome": "ACESSO VIP COMPLETO", "valor": 24.90, "botao_texto": "💦 R$ 24,90 - ME VER SEM CENSURA"},
-    "plano_2": {"id": "plano_3meses", "nome": "VIP + PACK ESPECIAL", "valor": 49.90, "botao_texto": "🔥 R$ 49,90 - TUDO + PACK EXCLUSIVO"},
-    "plano_3": {"id": "plano_1ano", "nome": "ACESSO TOTAL + EU SÓ PRA VOCÊ", "valor": 67.00, "botao_texto": "💎 R$ 67,00 - SER MEU NAMORADO VIP"}
+    "plano_1": {"id": "plano_1mes", "nome": "VIP 7 DIAS", "valor": 24.90, "botao_texto": "🥵VIP 7 DIAS | <s>De R$64,90</s> <b>por R$24,90</b>"},
+    "plano_2": {"id": "plano_3meses", "nome": "VIP 3 MESES", "valor": 39.90, "botao_texto": "🔥VIP 3 MESES | <s>De R$99,90</s> <b>por R$39,90</b>"},
+    "plano_3": {"id": "plano_1ano", "nome": "VIP ANUAL", "valor": 57.00, "botao_texto": "💎VIP ANUAL | <s>De R$175,00</s> <b>por R$57,00</b>"}
 }
 # ==================================================
 
@@ -156,6 +158,7 @@ CONFIGURACAO_BOT = {
         "ETAPA_4_FALLBACK": 300,         # (5m) Se não escolher plano, envia desconto
         "APROVACAO_GRUPO_BG": 40,       # (40s) Tempo para aprovar a entrada no grupo em background
         "PIX_TIMEOUT": 3600,            # (60min) Tempo para expirar o PIX
+        "ETAPA_6_FALLBACK": 7200        # (2h) Timeout para última chance
     }
 }
 # ========================================================
@@ -453,15 +456,21 @@ async def job_timeout_pix(context: ContextTypes.DEFAULT_TYPE):
             logger.info(f"🗑️ PIX expirado invalidado para usuário {user_id}")
         
         texto_desconto_timeout = (
-            "😳 <b>Opa, meu amor... vi que você não finalizou o pagamento!</b>\n\n"
-            "💔 Sei que às vezes a gente fica na dúvida, né?\n\n"
-            "🎁 <b>ÚLTIMA CHANCE:</b> Vou liberar um <b>DESCONTO ESPECIAL</b> só pra você!\n\n"
-            "⚡ <b>20% OFF + Bônus Exclusivos!</b>\n\n"
-            "🔥 <b>É AGORA OU NUNCA, amor...</b> 👇"
+            "🔥Meu bem, olhá o que você tá perdendo...\n\n"
+            "Quando você quiser, pode marcar uma <b>chamada de vídeo comigo</b>, onde faço <b>tudinho que você mandar até você g0.zar</b>, basta vir pro meu <b>VIP</b>.\n"
+            "Só precisa se mostrar pra mim se você quiser, ta bom?\n\n"
+            "E você vai ter tudo isso aqui que já falei também também:\n"
+            "💎 Vídeos e fotos do jeitinho que você gosta...\n"
+            "💎 Videos exclusivo pra você, te fazendo go.zar só eu e você\n"
+            "💎 Meu contato pessoal\n"
+            "💎 Sempre posto coisa nova\n"
+            "💎 Chamada de vídeo só nós 2\n"
+            "💎 E muito mais meu bem...\n\n"
+            "⚡ <b>60% OFF + Chamada de vídeo + Bônus!</b>\n\n"
+            "<b>Vem ver os conteúdinhos e vamos marcar uma chamada de video</b>, só eu e você. Se quiser pode ser agora ou mais tarde, to disponível..."
         )
         
-        plano_desc = REMARKETING_PLANS["plano_desc_20_off"]
-        keyboard = [[InlineKeyboardButton(plano_desc["botao_texto"], callback_data=f"plano:{plano_desc['id']}")]]
+        keyboard = [[InlineKeyboardButton("IR PRO VIP🥵🔥", callback_data='trigger_etapa4')]]
         
         await context.bot.send_message(
             chat_id=chat_id, 
@@ -470,10 +479,72 @@ async def job_timeout_pix(context: ContextTypes.DEFAULT_TYPE):
             parse_mode='HTML'
         )
         logger.info(f"✅ Mensagem de desconto especial enviada para {user_id}")
-        
+
+        # Agenda o job de ÚLTIMA CHANCE
+        context.job_queue.run_once(
+            job_ultima_chance,
+            CONFIGURACAO_BOT["DELAYS"]["ETAPA_6_FALLBACK"],
+            chat_id=chat_id,
+            user_id=user_id,
+            name=f"ultima_chance_{user_id}"
+        )
+        logger.info(f"⏰ Job de ÚLTIMA CHANCE agendado para {user_id} em {CONFIGURACAO_BOT['DELAYS']['ETAPA_6_FALLBACK']/3600:.1f} horas.")
+
     except Exception as e:
         logger.error(f"❌ Erro no timeout PIX para usuário {user_id}: {e}")
     #================= FECHAMENTO ======================
+
+async def job_ultima_chance(context: ContextTypes.DEFAULT_TYPE):
+    #======== ETAPA FINAL: ÚLTIMA OFERTA (FALLBACK DO FALLBACK) =============
+    job = context.job
+    chat_id = job.chat_id
+    user_id = job.user_id
+
+    logger.info(f"⏰ ETAPA FINAL: Enviando ÚLTIMA CHANCE para usuário {user_id}")
+
+    try:
+        # 1. Enviar a imagem/vídeo
+        await context.bot.send_video(chat_id=chat_id, video=MEDIA_ULTIMA_CHANCE)
+
+        # 2. Enviar o áudio
+        audio_path = 'audio_ultima_etapa.ogg'
+        if os.path.exists(audio_path):
+            with open(audio_path, 'rb') as audio_file:
+                await context.bot.send_voice(chat_id=chat_id, voice=audio_file)
+        else:
+            logger.warning(f"⚠️ Arquivo de áudio não encontrado: {audio_path}")
+
+        # 3. Enviar o texto e o botão
+        texto_final = (
+            "Como te falei, é <b>sua primeira e única chance de vir pro VIP com promoção QUASE DE GRAÇA</b> (Eu não ofereço isso 2 vezes em)...\n\n"
+            "Meu vip de 1 ano, onde você tem tudinho! Era R$57,00 já com desconto, <b>mas hoje (AGORA!) vai ser só R$19,90...</b>\n\n"
+            "Vem meu bem, ter tudo que já te falei:\n"
+            "💎 Vídeos e fotos do jeitinho que você gosta...\n"
+            "💎 Videos exclusivo pra você, te fazendo go.zar só eu e você\n"
+            "💎 Meu contato pessoal\n"
+            "💎 Sempre posto coisa nova\n"
+            "💎 Chamada de vídeo só nós 2\n"
+            "💎 E muito mais meu bem...\n\n"
+            "<b>🔥Primeira e última chance de vir pro VIP nesse valor! (SÓ VALE HOJE EM)</b>\n\n"
+            "Vem me ver daquele jeitinho e go.zar gostoso pra mim💦🥵⬇️"
+        )
+        
+        plano_final_id = "plano_desc_20_off" # ID do plano de R$19,90
+        keyboard = [[InlineKeyboardButton("SER VIP POR 1 ANO (19,90)🥵🔥", callback_data=f"plano:{plano_final_id}")]]
+        
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=texto_final,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='HTML'
+        )
+        logger.info(f"✅ Mensagem de ÚLTIMA CHANCE enviada para {user_id}")
+
+    except Exception as e:
+        logger.error(f"❌ Erro na job_ultima_chance para usuário {user_id}: {e}")
+    #================= FECHAMENTO ======================
+
+
 
 # ==============================================================================
 # 3. LÓGICA DO FUNIL DE VENDAS (POR ETAPA)
@@ -540,13 +611,26 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"❌ Erro crítico ao salvar usuário {user.id}: {e}")
 
     if await check_if_user_is_member(context, user.id):
-        text = "Que bom te ver de volta, meu bem! 😍\n\nJá que você já tá no grupinho, que tal ver uns conteúdinhos especiais que preparei pra você? 🔥"
-        keyboard = [[InlineKeyboardButton("VER CONTEÚDINHO 🥵", callback_data='trigger_etapa3')]]
-        await context.bot.send_photo(chat_id=chat_id, photo=MEDIA_APRESENTACAO, caption=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
+        text = (
+            "Meu bem, quero que me veja todinha no VIP, olha que você vai ver:\n\n"
+            "💎 Vídeos e fotos do jeitinho que você gosta...\n"
+            "💎 Videos exclusivo pra você, te fazendo go.zar só eu e você\n"
+            "💎 Meu contato pessoal\n"
+            "💎 Sempre posto coisa nova\n"
+            "💎 Chamada de vídeo só nós 2\n"
+            "💎 E muito mais meu bem...\n\n"
+            "🎁 <b>Vou te dar 60% de desconto</b>, então vai ficar <b>bem baratinho</b> por tudo que vou te mostrar! <b>(ESSE SUPER DESCONTO SÓ VALE POR HOJE)</b>\n\n"
+            "Vem goz.ar bb🥵💦⬇️"
+        )
+        keyboard = [
+            [InlineKeyboardButton("QUERO IR PRO VIP 💎", callback_data='trigger_etapa4')],
+            [InlineKeyboardButton("QUERO VER PRÉVIAS 😈", callback_data='trigger_etapa3')]
+        ]
+        await context.bot.send_photo(chat_id=chat_id, photo=MEDIA_APRESENTACAO, caption=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
         context.job_queue.run_once(job_etapa3_galeria, CONFIGURACAO_BOT["DELAYS"]["ETAPA_2_FALLBACK"], chat_id=chat_id, name=f"job_etapa3_{chat_id}", data={'chat_id': chat_id})
     else:
-        text = "Meu bem, entra no meu *GRUPINHO GRÁTIS* pra ver daquele jeito q vc gosta 🥵⬇️"
-        keyboard = [[InlineKeyboardButton("ENTRAR NO GRUPO 🥵", url=GROUP_INVITE_LINK)]]
+        text = "Meu bem, primeiro entra no meu *GRUPINHO GRÁTIS* 🥵⬇️"
+        keyboard = [[InlineKeyboardButton("ENTRAR NO GRUPO GRÁTIS 🔥", url=GROUP_INVITE_LINK)]]
         await context.bot.send_photo(chat_id=chat_id, photo=MEDIA_APRESENTACAO, caption=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
         context.job_queue.run_once(job_etapa2_prompt_previa, CONFIGURACAO_BOT["DELAYS"]["ETAPA_1_FALLBACK"], chat_id=chat_id, name=f"job_etapa2_{chat_id}", data={'chat_id': chat_id})
     #================= FECHAMENTO ======================
@@ -566,13 +650,28 @@ async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     await remove_job_if_exists(f"job_etapa2_{chat_id}", context)
     
-    text = "Jaja te aceito meu amor, mas antes que tal ver uns conteudinhos meus?? 👀"
-    keyboard = [[InlineKeyboardButton("VER CONTEUDINHOS 🔥", callback_data='trigger_etapa3')]]
-    msg = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
+    text = (
+        "Meu bem, jájá te aceito no meu grupo grátis...\n\n"
+        "Mas o que você quer mesmo tá dentro do meu VIP, olha tudinho que você pode ver:\n\n"
+        "💎 Vídeos e fotos do jeitinho que você gosta...\n"
+        "💎 Videos exclusivo pra você, te fazendo go.zar só eu e você\n"
+        "💎 Meu contato pessoal\n"
+        "💎 Sempre posto coisa nova\n"
+        "💎 Chamada de vídeo só nós 2\n"
+        "💎 E muito mais meu bem...\n\n"
+        "🎁 Como <b>você já comprou alguns conteúdinhos</b>, eu vou ser boazinha e <b>vou te dar 60% de desconto</b>, então vai ficar <b>bem baratinho</b> por tudo que vou te mostrar! <b>(ESSE SUPER DESCONTO SÓ VALE POR HOJE)</b>\n\n"
+        "Vem goz.ar bb🥵💦⬇️"
+    )
+    keyboard = [
+        [InlineKeyboardButton("QUERO IR PRO VIP 💎🔥", callback_data='trigger_etapa4')],
+        [InlineKeyboardButton("QUERO VER PRÉVIAS 😈", callback_data='trigger_etapa3')]
+    ]
+    msg = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
     context.user_data['etapa2_msg'] = msg.message_id
     
     context.job_queue.run_once(job_etapa3_galeria, CONFIGURACAO_BOT["DELAYS"]["ETAPA_2_FALLBACK"], chat_id=chat_id, name=f"job_etapa3_{chat_id}", data={'chat_id': chat_id})
     context.job_queue.run_once(approve_user_callback, CONFIGURACAO_BOT["DELAYS"]["APROVACAO_GRUPO_BG"], user_id=user_id, name=f"approve_{user_id}", data={'user_id': user_id, 'chat_id': GROUP_ID})
+
     #================= FECHAMENTO ======================
 
 async def approve_user_callback(context: ContextTypes.DEFAULT_TYPE):
@@ -593,7 +692,7 @@ async def job_etapa2_prompt_previa(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.data['chat_id']
     logger.info(f"⏰ ETAPA 2: Enviando prompt de prévia para {chat_id}.")
     
-    text = "Quer ver um pedacinho do que te espera... 🔥 (É DE GRAÇA!!!) ⬇️"
+    text = "Quer ver um pedacinho do que te espera... 🔥⬇️"
     keyboard = [[InlineKeyboardButton("QUERO VER UMA PRÉVIA 🔥🥵", callback_data='trigger_etapa3')]]
     msg = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
     
@@ -682,13 +781,14 @@ async def job_etapa4_planos_vip(context: ContextTypes.DEFAULT_TYPE, chat_id_manu
     logger.info(f"⏰ ETAPA 4: Enviando planos VIP para {chat_id}.")
     
     texto_planos = (
-        "💋 <b>Agora vem a parte gostosa, meu amor...</b>\n\n"
-        "🔥 No meu VIP você vai ter:\n"
-        "• Vídeos completos SEM CENSURA\n"
-        "• Fotos íntimas que só meus namorados veem\n"
-        "• Chamadas privadas só eu e você\n"
-        "• Meu WhatsApp pessoal (plano premium)\n\n"
-        "😈 <b>Escolhe como você quer me ter:</b>"
+        "💎 Vídeos e fotos do jeitinho que você gosta...\n"
+        "💎 Videos exclusivo pra você, te fazendo go.zar só eu e você\n"
+        "💎 Meu contato pessoal\n"
+        "💎 Sempre posto coisa nova\n"
+        "💎 Chamada de vídeo só nós 2\n"
+        "💎 E muito mais meu bem...\n\n"
+        "🚨 <b>Você tem 60% de desconto em qualquer uma das opções, aproveite! (DESCONTO SE ENCERRA EM BREVE)</b>\n\n"
+        "Escolhe o seu e vem g0.zar pra mim meu bem👇😋🔥"
     )
     keyboard = [[InlineKeyboardButton(p["botao_texto"], callback_data=f"plano:{p['id']}")] for p in VIP_PLANS.values()]
     msg = await context.bot.send_message(chat_id=chat_id, text=texto_planos, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
@@ -710,11 +810,15 @@ async def job_etapa4_desconto(context: ContextTypes.DEFAULT_TYPE):
     
     await delete_previous_message(context, 'etapa4_msg', chat_id)
     
-    texto_desconto = "Ei, meu bem... vi que você ficou na dúvida. 🤔\n\nPra te ajudar a decidir, liberei um <b>desconto especial SÓ PRA VOCÊ</b>. Mas corre que é por tempo limitado! 👇"
-    plano_desc = REMARKETING_PLANS["plano_desc_20_off"]
-    keyboard = [[InlineKeyboardButton(plano_desc["botao_texto"], callback_data=f"plano:{plano_desc['id']}")]]
-    await context.bot.send_message(chat_id=chat_id, text=texto_desconto, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    texto_desconto = (
+        "Ei, meu bem... vi que você ficou na dúvida. 🤔\n\n"
+        "Pra te ajudar a decidir, mandei um <b>pedacinho do que te espera</b>!\n\n"
+        "Mas corre para aproveitar com desconto! 👇"
+    )
+    keyboard = [[InlineKeyboardButton("QUERO IR PRO VIP COM DESCONTO 💎🔥", callback_data='trigger_etapa4')]]
+    await context.bot.send_video(chat_id=chat_id, video=MEDIA_VIDEO_PANCADA, caption=texto_desconto, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
     #================= FECHAMENTO ======================
+
 
 # ------------------------- ETAPA 5: PROCESSAMENTO DO PAGAMENTO -------------------------
 async def callback_processar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -822,7 +926,7 @@ async def enviar_mensagem_pix(context: ContextTypes.DEFAULT_TYPE, chat_id: int, 
         f"📸 <b>Pague utilizando o QR Code</b>\n"
         f"💸 <b>Pague por Pix copia e cola:</b>\n"
         f"<blockquote><code>{escape(pix_copia_cola)}</code></blockquote>"
-        f"<i>(Clique para copiar)</i>\n\n"
+        f"<i>(Clique para copiar⤴️)</i>\n\n"
         f"🎯 <b>Plano:</b> {escape(plano['nome'])}\n"
         f"💰 <b>Valor: R$ {plano['valor']:.2f}</b>"
     )
@@ -851,7 +955,7 @@ async def enviar_mensagem_pix(context: ContextTypes.DEFAULT_TYPE, chat_id: int, 
             f"📸 <b>QR Code:</b> <a href='{qr_code_url}'>Clique aqui para ver o QR Code</a>\n\n"
             f"💸 <b>Pague por Pix copia e cola:</b>\n"
             f"<blockquote><code>{escape(pix_copia_cola)}</code></blockquote>"
-            f"<i>(Clique para copiar)</i>\n\n"
+            f"<i>(Clique para copiar⤴️)</i>\n\n"
             f"🎯 <b>Plano:</b> {escape(plano['nome'])}\n"
             f"💰 <b>Valor: R$ {plano['valor']:.2f}</b>"
         )
