@@ -98,7 +98,7 @@ def index():
     """Endpoint raiz com informações básicas."""
     return jsonify({
         'service': 'API Gateway - Integração TriboPay',
-        'version': '2.1-dados-reais-telegram',
+        'version': '2.2-hotfix',
         'status': 'online'
     })
 #================= FECHAMENTO ======================
@@ -271,13 +271,15 @@ def gerar_pix():
         transaction_id = tribopay_data.get('hash')
         pix_data = tribopay_data.get('pix', {})
         
-        # CRÍTICO: A API TriboPay retorna pix_qr_code e pix_url, não 'code' e 'url'
-        pix_code = pix_data.get('pix_qr_code')  # Código PIX copia e cola
-        qr_code = pix_data.get('pix_url')       # URL para pagamento
+        # CORREÇÃO: Tornar a validação de dados PIX mais flexível
+        pix_code = pix_data.get('pix_qr_code')      # Código PIX copia e cola (Prioridade 1)
+        qr_code = pix_data.get('pix_url')           # URL para pagamento (Opcional)
+        qr_code_b64 = pix_data.get('qr_code_base64') # Base64 (Opcional)
 
-        if not all([transaction_id, pix_code, qr_code]):
-            logger.error(f"❌ Resposta da TriboPay bem-sucedida, mas com dados PIX ausentes: {tribopay_data}")
-            raise ValueError("Resposta da TriboPay incompleta")
+        # A condição para falha é não ter ID da transação ou não ter NENHUMA forma de PIX.
+        if not transaction_id or not (pix_code or qr_code or qr_code_b64):
+            logger.error(f"❌ Resposta da TriboPay bem-sucedida, mas sem dados PIX utilizáveis: {tribopay_data}")
+            raise ValueError("Resposta da TriboPay não contém dados PIX utilizáveis (pix_qr_code, pix_url, ou qr_code_base64)")
 
         logger.info(f"✅ PIX gerado com sucesso! Transaction ID: {transaction_id}")
 
@@ -708,23 +710,27 @@ def tribopay_webhook():
         transaction_data = webhook_data.get('transaction')
         transaction_id = None
         
-        # Formato 1: transaction é objeto com id/hash
+        # Formato 1: transaction é um objeto (dict)
         if isinstance(transaction_data, dict):
             transaction_id = transaction_data.get('id') or transaction_data.get('hash')
-        # Formato 2: transaction é string JSON
+        # Formato 2: transaction é uma string (pode ser JSON ou hash direto)
         elif isinstance(transaction_data, str):
             try:
-                transaction_data = json.loads(transaction_data)
-                transaction_id = transaction_data.get('id') or transaction_data.get('hash')
+                # Tenta decodificar como JSON
+                data = json.loads(transaction_data)
+                transaction_id = data.get('id') or data.get('hash')
             except json.JSONDecodeError:
-                # Formato 3: transaction é diretamente o hash ID
-                if len(transaction_data) > 5:  # Assumindo que hash tem pelo menos 6 caracteres
+                # Se não for JSON, assume que é o hash/ID direto
+                if len(transaction_data) > 5:
                     transaction_id = transaction_data
-                    logger.info(f"🔍 Transaction data é hash direto: {transaction_data}")
+                    logger.info(f"🔍 transaction_data é uma string (hash direto): {transaction_data}")
                 else:
-                    logger.error(f"❌ transaction_data é string mas não é JSON válido nem hash: {transaction_data}")
-                    return jsonify({'status': 'erro', 'reason': 'transaction data inválido'}), 400
-        # Formato 4: ID direto no root do webhook
+                    logger.warning(f"⚠️ transaction_data é uma string curta e não-JSON: {transaction_data}")
+        # Formato 3 (NOVO): transaction é um número inteiro (ID direto)
+        elif isinstance(transaction_data, int):
+            transaction_id = transaction_data
+            logger.info(f"🔍 transaction_data é um inteiro (ID direto): {transaction_data}")
+        # Formato 4: transaction não existe, busca ID no root do webhook
         elif not transaction_data:
             transaction_id = webhook_data.get('id') or webhook_data.get('hash')
             
